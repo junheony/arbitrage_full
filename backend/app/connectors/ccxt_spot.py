@@ -54,10 +54,13 @@ class CCXTSpotConnector(MarketConnector):
 
         best_bid = bids[0][0]
         best_ask = asks[0][0]
+        base, quote = symbol.split("/")
         return MarketQuote(
             exchange=self.name,
             venue_type="spot",
             symbol=symbol,
+            base_asset=base,
+            quote_currency=quote,
             bid=float(best_bid),
             ask=float(best_ask),
             timestamp=datetime.utcnow(),

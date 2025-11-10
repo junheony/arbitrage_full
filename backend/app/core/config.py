@@ -20,6 +20,16 @@ class Settings(BaseSettings):
     simulated_base_notional: float = 10000.0
     simulated_fee_bps: float = 10.0
 
+    # Database / 데이터베이스
+    database_url: str = Field(
+        default="",
+        description="PostgreSQL connection URL (leave empty for SQLite).",
+    )
+    secret_key: str = Field(
+        default="CHANGE_THIS_IN_PRODUCTION_MINIMUM_32_CHARS",
+        description="Secret key for JWT and encryption (min 32 chars).",
+    )
+
     # Market universe / 마켓 구성
     trading_symbols: list[str] = Field(
         default_factory=lambda: ["BTC/USDT", "ETH/USDT", "XRP/USDT"],

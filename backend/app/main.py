@@ -6,15 +6,27 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import router as api_router
+from app.api.auth_routes import router as auth_router
+from app.api.portfolio_routes import router as portfolio_router
+from app.api.execution_routes import router as execution_router
+from app.db.init_db import init_db
 from app.connectors.binance_spot import BinanceSpotConnector
 from app.connectors.bithumb_spot import BithumbSpotConnector
-from app.connectors.ccxt_spot import CCXTSpotConnector
 from app.connectors.fx_rates import KRWUSDForexConnector
 from app.connectors.okx_spot import OkxSpotConnector
 from app.connectors.simulated import SimulatedConnector
 from app.connectors.upbit_spot import UpbitSpotConnector
 from app.core.config import get_settings
 from app.services.opportunity_engine import OpportunityEngine
+
+# Optional CCXT import / 선택적 CCXT 임포트
+try:
+    from app.connectors.ccxt_spot import CCXTSpotConnector
+    CCXT_AVAILABLE = True
+except ImportError:
+    CCXT_AVAILABLE = False
+    logger_temp = logging.getLogger(__name__)
+    logger_temp.warning("CCXT not available, ccxt_spot connector disabled / CCXT 사용 불가")
 
 
 logger = logging.getLogger(__name__)
@@ -26,16 +38,26 @@ app = FastAPI(title=settings.app_name)
 # Allow local frontend dev server during MVP.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:5174", "http://127.0.0.1:5174"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 app.include_router(api_router, prefix="/api")
+app.include_router(auth_router, prefix="/api/auth")
+app.include_router(portfolio_router, prefix="/api/portfolio")
+app.include_router(execution_router, prefix="/api/execution")
 
 
 @app.on_event("startup")
 async def startup_event() -> None:
+    # Initialize database tables / 데이터베이스 테이블 초기화
+    try:
+        await init_db()
+        logger.info("Database initialized. / 데이터베이스 초기화됨.")
+    except Exception as exc:
+        logger.warning("Database initialization skipped: %s / DB 초기화 생략: %s", exc, exc)
+
     connectors = []
 
     if settings.enable_public_rest_spot:
@@ -82,7 +104,7 @@ async def startup_event() -> None:
         )
     )
 
-    if settings.enable_ccxt_spot:
+    if settings.enable_ccxt_spot and CCXT_AVAILABLE:
         for exchange_id in settings.ccxt_spot_exchanges:
             try:
                 connectors.append(CCXTSpotConnector(exchange_id, settings.trading_symbols))
@@ -99,6 +121,8 @@ async def startup_event() -> None:
                     exchange_id,
                     exc,
                 )
+    elif settings.enable_ccxt_spot and not CCXT_AVAILABLE:
+        logger.warning("CCXT is enabled in settings but not installed / 설정에서 활성화되었지만 설치되지 않음")
     engine = OpportunityEngine(connectors=connectors)
     await engine.start()
     app.state.opportunity_engine = engine
