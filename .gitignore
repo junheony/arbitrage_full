@@ -1,0 +1,17 @@
+.DS_Store
+.env
+.env.*
+*.log
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+backend/.venv/
+backend/.env
+backend/.env.*
+backend/arbitrage_backend.egg-info/
+
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+frontend/.env.*

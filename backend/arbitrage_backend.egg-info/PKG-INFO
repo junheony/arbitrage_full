@@ -1,0 +1,24 @@
+Metadata-Version: 2.4
+Name: arbitrage-backend
+Version: 0.1.0
+Summary: All-in-one arbitrage orchestration backend
+Author: Codex Assistant
+Requires-Python: >=3.9
+Requires-Dist: fastapi>=0.111.0
+Requires-Dist: uvicorn[standard]>=0.30.0
+Requires-Dist: pydantic>=2.6.0
+Requires-Dist: httpx>=0.27.0
+Requires-Dist: pandas>=2.2.0
+Requires-Dist: redis>=5.0.1
+Requires-Dist: sqlalchemy>=2.0.28
+Requires-Dist: asyncpg>=0.29.0
+Requires-Dist: pydantic-settings>=2.2.1
+Requires-Dist: apscheduler>=3.10.4
+Requires-Dist: ccxt>=4.1.78
+Provides-Extra: dev
+Requires-Dist: pytest>=8.2.0; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.23.6; extra == "dev"
+Requires-Dist: ruff>=0.4.4; extra == "dev"
+Requires-Dist: mypy>=1.9.0; extra == "dev"
+Requires-Dist: types-redis; extra == "dev"
+Requires-Dist: types-requests; extra == "dev"
