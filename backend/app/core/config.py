@@ -67,11 +67,15 @@ class Settings(BaseSettings):
     )
     enable_hyperliquid_perp: bool = Field(
         default=False,
-        description="Enable Hyperliquid DEX perpetual connector.",
+        description="Enable Hyperliquid DEX perpetual connector (also powers based.one).",
     )
-    enable_base_perp: bool = Field(
+    enable_lighter_perp: bool = Field(
         default=False,
-        description="Enable Base network (Synthetix) perpetual connector.",
+        description="Enable Lighter DEX perpetual connector.",
+    )
+    enable_edgex_perp: bool = Field(
+        default=False,
+        description="Enable EdgeX perpetual connector.",
     )
     min_open_interest_usd: float = Field(
         default=100_000.0,

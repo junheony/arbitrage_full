@@ -19,7 +19,8 @@ from app.connectors.upbit_spot import UpbitSpotConnector
 from app.connectors.binance_perp import BinancePerpConnector
 from app.connectors.bybit_perp import BybitPerpConnector
 from app.connectors.hyperliquid_perp import HyperliquidPerpConnector
-from app.connectors.base_perp import BasePerpConnector
+from app.connectors.lighter_perp import LighterPerpConnector
+from app.connectors.edgex_perp import EdgeXPerpConnector
 from app.core.config import get_settings
 from app.services.opportunity_engine import OpportunityEngine
 
@@ -118,16 +119,23 @@ async def startup_event() -> None:
         if settings.enable_hyperliquid_perp:
             try:
                 connectors.append(HyperliquidPerpConnector(settings.trading_symbols))
-                logger.info("Hyperliquid DEX perpetual connector enabled / 하이퍼리퀴드 DEX 무기한 선물 커넥터 활성화")
+                logger.info("Hyperliquid DEX perpetual connector enabled (also powers based.one) / 하이퍼리퀴드 DEX 무기한 선물 커넥터 활성화 (based.one도 지원)")
             except Exception as exc:  # pylint: disable=broad-except
                 logger.exception("Failed to initialize Hyperliquid perp connector: %s", exc)
 
-        if settings.enable_base_perp:
+        if settings.enable_lighter_perp:
             try:
-                connectors.append(BasePerpConnector(settings.trading_symbols))
-                logger.info("Base network (Synthetix) perpetual connector enabled / Base 네트워크 (Synthetix) 무기한 선물 커넥터 활성화")
+                connectors.append(LighterPerpConnector(settings.trading_symbols))
+                logger.info("Lighter DEX perpetual connector enabled / Lighter DEX 무기한 선물 커넥터 활성화")
             except Exception as exc:  # pylint: disable=broad-except
-                logger.exception("Failed to initialize Base perp connector: %s", exc)
+                logger.exception("Failed to initialize Lighter perp connector: %s", exc)
+
+        if settings.enable_edgex_perp:
+            try:
+                connectors.append(EdgeXPerpConnector(settings.trading_symbols))
+                logger.info("EdgeX perpetual connector enabled / EdgeX 무기한 선물 커넥터 활성화")
+            except Exception as exc:  # pylint: disable=broad-except
+                logger.exception("Failed to initialize EdgeX perp connector: %s", exc)
     else:
         # Add simulated perpetual connector for demo / 데모용 시뮬레이션 무기한 선물 커넥터 추가
         connectors.append(

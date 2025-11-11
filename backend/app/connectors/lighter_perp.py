@@ -15,46 +15,39 @@ from app.models.market_data import FundingRate, PerpMarketData
 logger = logging.getLogger(__name__)
 
 
-class BasePerpConnector(PerpConnector):
-    """Fetches Base network perpetual futures data (Synthetix Perps) / Base 네트워크 무기한 선물 데이터 수집 (Synthetix Perps).
-
-    This connector interfaces with Synthetix Perps v3 on Base network.
-    Base 네트워크의 Synthetix Perps v3와 인터페이스합니다.
-    """
+class LighterPerpConnector(PerpConnector):
+    """Fetches Lighter DEX perpetual futures data / Lighter DEX 무기한 선물 데이터 수집."""
 
     venue_type = "perp"
 
     def __init__(self, symbols: Iterable[str]) -> None:
-        self.name = "base-synthetix"
+        self.name = "lighter"
         self._symbols = list(symbols)
         timeout = get_settings().public_rest_timeout
-        # Using Synthetix v3 API endpoint for Base
         self._client = httpx.AsyncClient(
-            base_url="https://perps.synthetix.io/api/base",
-            timeout=timeout * 2,  # API can be slower
+            base_url="https://apidocs.lighter.xyz",  # API base URL
+            timeout=timeout * 2,
             headers={"Content-Type": "application/json"},
         )
         self._symbol_map = self._build_symbol_map()
 
     def _build_symbol_map(self) -> dict[str, str]:
-        """Map standard symbols to Synthetix format / 심볼 형식 매핑."""
+        """Map standard symbols to Lighter format / 심볼 형식 매핑."""
         symbol_map = {}
         for symbol in self._symbols:
-            base, _ = symbol.split("/")
-            # Synthetix uses ETH, BTC format
-            symbol_map[symbol] = base
+            base, quote = symbol.split("/")
+            # Lighter uses format like BTC-USDT
+            symbol_map[symbol] = f"{base}-{quote}"
         return symbol_map
 
     async def fetch_quotes(self) -> Sequence[MarketQuote]:
         """Fetch order book quotes for perpetual futures / 무기한 선물 호가 조회."""
-        # Note: Synthetix doesn't have traditional order books, uses oracles
-        # We'll fetch current prices and simulate spreads
         tasks = [self._fetch_quote(symbol) for symbol in self._symbols]
         results = await asyncio.gather(*tasks, return_exceptions=True)
         quotes: list[MarketQuote] = []
         for symbol, result in zip(self._symbols, results):
             if isinstance(result, Exception):
-                logger.warning("Base perp quote failed for %s: %s", symbol, result)
+                logger.warning("Lighter quote failed for %s: %s", symbol, result)
                 continue
             if result:
                 quotes.append(result)
@@ -67,7 +60,7 @@ class BasePerpConnector(PerpConnector):
         funding_rates: list[FundingRate] = []
         for symbol, result in zip(self._symbols, results):
             if isinstance(result, Exception):
-                logger.warning("Base funding rate failed for %s: %s", symbol, result)
+                logger.warning("Lighter funding rate failed for %s: %s", symbol, result)
                 continue
             if result:
                 funding_rates.append(result)
@@ -80,7 +73,7 @@ class BasePerpConnector(PerpConnector):
         data: list[PerpMarketData] = []
         for symbol, result in zip(self._symbols, results):
             if isinstance(result, Exception):
-                logger.warning("Base perp data failed for %s: %s", symbol, result)
+                logger.warning("Lighter perp data failed for %s: %s", symbol, result)
                 continue
             if result:
                 data.append(result)
@@ -88,46 +81,38 @@ class BasePerpConnector(PerpConnector):
 
     async def fetch_open_interest(self, symbol: str) -> float:
         """Fetch open interest in USD for a symbol / 심볼의 USD 기준 미결제약정 조회."""
-        base_symbol = self._symbol_map.get(symbol, symbol.split("/")[0])
+        lighter_symbol = self._symbol_map.get(symbol, symbol)
         try:
-            # Fetch from Synthetix markets API
-            response = await self._client.get(f"/markets/{base_symbol}")
+            # Lighter API endpoint for open interest
+            response = await self._client.get(f"/v1/market/{lighter_symbol}/stats")
             response.raise_for_status()
             data = response.json()
-
-            oi = float(data.get("openInterest", 0))
-            mark_price = float(data.get("markPrice", 0))
-
-            return abs(oi) * mark_price  # OI can be negative in Synthetix
+            oi = float(data.get("open_interest", 0))
+            return oi
         except Exception as exc:
-            logger.warning("Base OI fetch failed for %s: %s", symbol, exc)
+            logger.warning("Lighter OI fetch failed for %s: %s", symbol, exc)
             return 0.0
 
     async def close(self) -> None:
         await self._client.aclose()
 
     async def _fetch_quote(self, symbol: str) -> MarketQuote | None:
-        """Fetch price quote for a single symbol / 단일 심볼 호가 조회."""
+        """Fetch order book for a single symbol / 단일 심볼 호가 조회."""
         base, quote = symbol.split("/")
-        base_symbol = self._symbol_map.get(symbol, base)
+        lighter_symbol = self._symbol_map.get(symbol, f"{base}-{quote}")
 
         try:
-            response = await self._client.get(f"/markets/{base_symbol}")
+            response = await self._client.get(f"/v1/orderbook/{lighter_symbol}", params={"depth": 5})
             response.raise_for_status()
             data = response.json()
 
-            mark_price = float(data.get("markPrice", 0))
-            if mark_price == 0:
+            bids = data.get("bids", [])
+            asks = data.get("asks", [])
+            if not bids or not asks:
                 return None
 
-            # Synthetix doesn't have traditional order books
-            # Simulate a tight spread (5 bps) around mark price
-            spread_bps = 5
-            spread_fraction = spread_bps / 10000
-            half_spread = mark_price * spread_fraction / 2
-
-            best_bid = mark_price - half_spread
-            best_ask = mark_price + half_spread
+            best_bid = float(bids[0][0])
+            best_ask = float(asks[0][0])
 
             return MarketQuote(
                 exchange=self.name,
@@ -140,28 +125,28 @@ class BasePerpConnector(PerpConnector):
                 timestamp=datetime.utcnow(),
             )
         except Exception as exc:
-            logger.warning("Base quote error for %s: %s", symbol, exc)
+            logger.warning("Lighter quote error for %s: %s", symbol, exc)
             return None
 
     async def _fetch_funding_rate(self, symbol: str) -> FundingRate | None:
         """Fetch funding rate for a single symbol / 단일 심볼 펀딩비 조회."""
         base, quote = symbol.split("/")
-        base_symbol = self._symbol_map.get(symbol, base)
+        lighter_symbol = self._symbol_map.get(symbol, f"{base}-{quote}")
 
         try:
-            response = await self._client.get(f"/markets/{base_symbol}")
+            response = await self._client.get(f"/v1/market/{lighter_symbol}/funding")
             response.raise_for_status()
             data = response.json()
 
-            # Synthetix funding rate (typically per day)
-            funding_rate = float(data.get("fundingRate", 0))
-            mark_price = float(data.get("markPrice", 0))
-            oi = float(data.get("openInterest", 0))
-            oi_usd = abs(oi) * mark_price
+            funding_rate = float(data.get("funding_rate", 0))
+            mark_price = float(data.get("mark_price", 0))
+            next_funding_ts = int(data.get("next_funding_time", 0))
 
-            # Convert daily funding rate to 8H
-            # Synthetix uses continuous funding, approximate to 8H periods
-            funding_rate_8h = funding_rate / 3  # Daily / 3 = 8H
+            # Lighter funding happens every 8 hours
+            funding_rate_8h = funding_rate
+
+            # Get open interest
+            oi_usd = await self.fetch_open_interest(symbol)
 
             return FundingRate(
                 exchange=self.name,
@@ -170,45 +155,63 @@ class BasePerpConnector(PerpConnector):
                 quote_currency=quote,
                 funding_rate=funding_rate,
                 funding_rate_8h=funding_rate_8h,
-                next_funding_time=None,  # Continuous funding
+                next_funding_time=datetime.fromtimestamp(next_funding_ts / 1000) if next_funding_ts else None,
                 open_interest_usd=oi_usd,
-                open_interest_contracts=abs(oi),
                 mark_price=mark_price,
                 index_price=None,
                 timestamp=datetime.utcnow(),
             )
         except Exception as exc:
-            logger.warning("Base funding rate error for %s: %s", symbol, exc)
+            logger.warning("Lighter funding rate error for %s: %s", symbol, exc)
             return None
 
     async def _fetch_perp_data(self, symbol: str) -> PerpMarketData | None:
         """Fetch combined perp market data / 통합 무기한 선물 데이터 조회."""
         base, quote = symbol.split("/")
-        base_symbol = self._symbol_map.get(symbol, base)
+        lighter_symbol = self._symbol_map.get(symbol, f"{base}-{quote}")
 
         try:
-            response = await self._client.get(f"/markets/{base_symbol}")
-            response.raise_for_status()
-            data = response.json()
+            # Fetch all data in parallel
+            book_task = self._client.get(f"/v1/orderbook/{lighter_symbol}", params={"depth": 5})
+            funding_task = self._client.get(f"/v1/market/{lighter_symbol}/funding")
+            stats_task = self._client.get(f"/v1/market/{lighter_symbol}/stats")
 
-            mark_price = float(data.get("markPrice", 0))
-            if mark_price == 0:
+            book_resp, funding_resp, stats_resp = await asyncio.gather(
+                book_task, funding_task, stats_task, return_exceptions=True
+            )
+
+            # Handle exceptions
+            if isinstance(book_resp, Exception):
+                raise book_resp
+            if isinstance(funding_resp, Exception):
+                raise funding_resp
+            if isinstance(stats_resp, Exception):
+                logger.warning("Stats fetch failed for %s, using default", symbol)
+                oi_usd = 0.0
+            else:
+                stats_resp.raise_for_status()
+                stats_data = stats_resp.json()
+                oi_usd = float(stats_data.get("open_interest", 0))
+
+            book_resp.raise_for_status()
+            funding_resp.raise_for_status()
+
+            book_data = book_resp.json()
+            funding_data = funding_resp.json()
+
+            bids = book_data.get("bids", [])
+            asks = book_data.get("asks", [])
+            if not bids or not asks:
                 return None
 
-            funding_rate = float(data.get("fundingRate", 0))
-            oi = float(data.get("openInterest", 0))
-            oi_usd = abs(oi) * mark_price
+            best_bid = float(bids[0][0])
+            best_ask = float(asks[0][0])
+            mark_price = float(funding_data.get("mark_price", 0))
+            funding_rate = float(funding_data.get("funding_rate", 0))
+            next_funding_ts = int(funding_data.get("next_funding_time", 0))
 
-            # Simulate spread
-            spread_bps = 5
-            spread_fraction = spread_bps / 10000
-            half_spread = mark_price * spread_fraction / 2
-
-            best_bid = mark_price - half_spread
-            best_ask = mark_price + half_spread
-
-            # Convert daily funding to 8H
-            funding_rate_8h = funding_rate / 3
+            # Lighter uses 8H intervals
+            funding_rate_8h = funding_rate
 
             return PerpMarketData(
                 exchange=self.name,
@@ -220,11 +223,11 @@ class BasePerpConnector(PerpConnector):
                 mark_price=mark_price,
                 funding_rate=funding_rate,
                 funding_rate_8h=funding_rate_8h,
-                next_funding_time=None,
+                next_funding_time=datetime.fromtimestamp(next_funding_ts / 1000) if next_funding_ts else None,
                 open_interest_usd=oi_usd,
-                open_interest_contracts=abs(oi),
+                open_interest_contracts=None,
                 timestamp=datetime.utcnow(),
             )
         except Exception as exc:
-            logger.warning("Base perp data error for %s: %s", symbol, exc)
+            logger.warning("Lighter perp data error for %s: %s", symbol, exc)
             return None
