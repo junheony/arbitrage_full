@@ -9,8 +9,10 @@ from datetime import datetime
 from typing import Awaitable, Sequence
 
 from app.connectors.base import MarketConnector
+from app.connectors.perp_base import PerpConnector
 from app.core.config import get_settings
 from app.models.opportunity import MarketQuote, Opportunity, OpportunityLeg, OpportunityType
+from app.models.market_data import FundingRate, PerpMarketData
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +22,8 @@ class OpportunityEngine:
 
     def __init__(self, connectors: Sequence[MarketConnector]):
         self._connectors = connectors
+        # Separate perp connectors for funding rate collection
+        self._perp_connectors = [c for c in connectors if isinstance(c, PerpConnector)]
         self._settings = get_settings()
         self._tether_curve: list[tuple[float, float]] = sorted(
             [tuple(point) for point in self._settings.tether_bot_curve],
@@ -89,8 +93,14 @@ class OpportunityEngine:
 
     async def _tick(self) -> None:
         quotes = await self._gather_quotes()
+        perp_data = await self._gather_perp_data()
+
         opportunities = self._generate_spot_cross(quotes)
         opportunities.extend(self._generate_kimchi_premium(quotes))
+        opportunities.extend(self._generate_funding_arb(perp_data))
+        opportunities.extend(self._generate_spot_perp_basis(quotes, perp_data))
+        opportunities.extend(self._generate_perp_perp_spread(perp_data))
+
         if not opportunities:
             opportunities = self._generate_placeholder_opportunities()
         self._latest = opportunities
@@ -121,6 +131,29 @@ class OpportunityEngine:
                 continue
             quotes.extend(result)
         return quotes
+
+    async def _gather_perp_data(self) -> list[PerpMarketData]:
+        """Gather perpetual market data from perp connectors / 무기한 선물 커넥터에서 시장 데이터 수집."""
+        if not self._perp_connectors:
+            return []
+
+        tasks: list[Awaitable[Sequence[PerpMarketData]]] = [
+            connector.fetch_perp_market_data() for connector in self._perp_connectors
+        ]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        perp_data: list[PerpMarketData] = []
+        for connector, result in zip(self._perp_connectors, results):
+            if isinstance(result, Exception):
+                logger.warning(
+                    "Perp connector %s failed: %s / 무기한 선물 커넥터 %s 오류: %s",
+                    connector.name,
+                    result,
+                    connector.name,
+                    result,
+                )
+                continue
+            perp_data.extend(result)
+        return perp_data
 
     def _generate_spot_cross(self, quotes: Sequence[MarketQuote]) -> list[Opportunity]:
         grouped: dict[tuple[str, str], list[MarketQuote]] = defaultdict(list)
@@ -283,6 +316,288 @@ class OpportunityEngine:
                 quantity=round(quantity, 6),
             )
         return [global_leg, krw_leg]
+
+    def _generate_funding_arb(self, perp_data: Sequence[PerpMarketData]) -> list[Opportunity]:
+        """Generate funding rate arbitrage opportunities / 펀딩비 차익거래 기회 생성.
+
+        Delta-neutral strategy: long on exchange with negative funding, short on exchange with positive funding.
+        델타 중립 전략: 음수 펀딩비 거래소에서 롱, 양수 펀딩비 거래소에서 숏.
+        """
+        # Group by base asset
+        grouped: dict[str, list[PerpMarketData]] = defaultdict(list)
+        for data in perp_data:
+            grouped[data.base_asset].append(data)
+
+        opportunities: list[Opportunity] = []
+        min_oi_usd = 100_000  # Minimum OI to avoid low liquidity / 낮은 유동성 회피를 위한 최소 OI
+
+        for asset, asset_perps in grouped.items():
+            # Filter by minimum OI / 최소 OI로 필터링
+            valid_perps = [p for p in asset_perps if p.open_interest_usd >= min_oi_usd]
+            if len(valid_perps) < 2:
+                continue
+
+            # Find pairs with opposite funding rates
+            for i, perp1 in enumerate(valid_perps):
+                for perp2 in valid_perps[i + 1 :]:
+                    # Calculate funding rate differential (8H normalized)
+                    funding_diff_8h = perp1.funding_rate_8h - perp2.funding_rate_8h
+
+                    # We want significant funding differential (at least 0.01% = 1 bps per 8H)
+                    if abs(funding_diff_8h) < 0.0001:
+                        continue
+
+                    # Check spread is reasonable (total spread should be < 20 bps)
+                    total_spread_bps = perp1.spread_bps + perp2.spread_bps
+                    if total_spread_bps > 20:
+                        continue
+
+                    # Long on lower funding, short on higher funding
+                    if funding_diff_8h > 0:
+                        long_perp = perp2
+                        short_perp = perp1
+                    else:
+                        long_perp = perp1
+                        short_perp = perp2
+                        funding_diff_8h = -funding_diff_8h
+
+                    # Expected PnL: funding differential - spread costs
+                    # 예상 수익: 펀딩비 차이 - 스프레드 비용
+                    funding_pnl_pct = funding_diff_8h * 100  # Convert to percentage
+                    spread_cost_pct = total_spread_bps / 100  # Convert bps to percentage
+                    expected_pnl_pct = funding_pnl_pct - spread_cost_pct
+
+                    if expected_pnl_pct <= 0:
+                        continue
+
+                    notional = self._settings.simulated_base_notional
+                    quantity = notional / long_perp.mark_price
+
+                    opportunity = Opportunity(
+                        id=str(uuid.uuid4()),
+                        type=OpportunityType.FUNDING_ARB,
+                        symbol=f"{asset}/USDT:USDT",
+                        spread_bps=round(funding_diff_8h * 10000, 3),
+                        expected_pnl_pct=round(expected_pnl_pct, 3),
+                        notional=round(notional, 2),
+                        timestamp=datetime.utcnow(),
+                        description=(
+                            f"Funding arb: Long {long_perp.exchange} @{long_perp.funding_rate_8h*100:.4f}%/8H, "
+                            f"Short {short_perp.exchange} @{short_perp.funding_rate_8h*100:.4f}%/8H / "
+                            f"펀딩 차익: {long_perp.exchange} 롱 {long_perp.funding_rate_8h*100:.4f}%/8H, "
+                            f"{short_perp.exchange} 숏 {short_perp.funding_rate_8h*100:.4f}%/8H"
+                        ),
+                        legs=[
+                            OpportunityLeg(
+                                exchange=long_perp.exchange,
+                                venue_type="perp",
+                                side="buy",
+                                symbol=f"{asset}/USDT:USDT",
+                                price=long_perp.ask,
+                                quantity=round(quantity, 6),
+                            ),
+                            OpportunityLeg(
+                                exchange=short_perp.exchange,
+                                venue_type="perp",
+                                side="sell",
+                                symbol=f"{asset}/USDT:USDT",
+                                price=short_perp.bid,
+                                quantity=round(quantity, 6),
+                            ),
+                        ],
+                        metadata={
+                            "funding_diff_8h_pct": round(funding_diff_8h * 100, 4),
+                            "long_exchange": long_perp.exchange,
+                            "long_funding_8h_pct": round(long_perp.funding_rate_8h * 100, 4),
+                            "long_oi_usd": round(long_perp.open_interest_usd, 2),
+                            "short_exchange": short_perp.exchange,
+                            "short_funding_8h_pct": round(short_perp.funding_rate_8h * 100, 4),
+                            "short_oi_usd": round(short_perp.open_interest_usd, 2),
+                            "total_spread_bps": round(total_spread_bps, 2),
+                        },
+                    )
+                    opportunities.append(opportunity)
+
+        return sorted(opportunities, key=lambda opp: opp.expected_pnl_pct, reverse=True)
+
+    def _generate_spot_perp_basis(
+        self, quotes: Sequence[MarketQuote], perp_data: Sequence[PerpMarketData]
+    ) -> list[Opportunity]:
+        """Generate spot vs perpetual basis arbitrage opportunities / 현물 vs 무기한 선물 베이시스 차익거래 기회 생성."""
+        opportunities: list[Opportunity] = []
+        min_oi_usd = 100_000
+
+        # Group spot quotes by asset
+        spot_quotes: dict[str, list[MarketQuote]] = defaultdict(list)
+        for quote in quotes:
+            if quote.venue_type == "spot" and quote.quote_currency in {"USDT", "USD"}:
+                spot_quotes[quote.base_asset].append(quote)
+
+        # Group perp data by asset
+        perp_by_asset: dict[str, list[PerpMarketData]] = defaultdict(list)
+        for perp in perp_data:
+            if perp.open_interest_usd >= min_oi_usd:
+                perp_by_asset[perp.base_asset].append(perp)
+
+        for asset in spot_quotes.keys():
+            if asset not in perp_by_asset:
+                continue
+
+            for spot in spot_quotes[asset]:
+                for perp in perp_by_asset[asset]:
+                    # Calculate basis (perp - spot)
+                    basis = perp.mark_price - spot.mid_price
+                    basis_bps = (basis / spot.mid_price) * 10000 if spot.mid_price > 0 else 0
+
+                    # Check if basis is significant (at least 10 bps)
+                    if abs(basis_bps) < 10:
+                        continue
+
+                    # Positive basis: perp > spot, buy spot, sell perp
+                    # Negative basis: spot > perp, sell spot, buy perp
+                    if basis_bps > 0:
+                        buy_venue = spot
+                        sell_venue = perp
+                        spread = perp.bid - spot.ask
+                    else:
+                        buy_venue = perp
+                        sell_venue = spot
+                        spread = spot.bid - perp.ask
+                        basis_bps = -basis_bps
+
+                    spread_bps = (spread / spot.mid_price) * 10000 if spot.mid_price > 0 else 0
+                    if spread_bps <= 0:
+                        continue
+
+                    expected_pnl_pct = (spread_bps / 100) - self._estimate_fees_pct(spot, perp)  # type: ignore
+                    if expected_pnl_pct <= 0:
+                        continue
+
+                    notional = self._settings.simulated_base_notional
+                    quantity = notional / spot.mid_price
+
+                    opportunity = Opportunity(
+                        id=str(uuid.uuid4()),
+                        type=OpportunityType.SPOT_VS_PERP,
+                        symbol=f"{asset}/USDT",
+                        spread_bps=round(spread_bps, 3),
+                        expected_pnl_pct=round(expected_pnl_pct * 100, 3),
+                        notional=round(notional, 2),
+                        timestamp=datetime.utcnow(),
+                        description=(
+                            f"Basis arb: {asset} spot@{spot.mid_price:.2f} vs perp@{perp.mark_price:.2f} "
+                            f"({basis_bps:.1f} bps) / 베이시스 차익: {asset} 현물@{spot.mid_price:.2f} vs "
+                            f"선물@{perp.mark_price:.2f} ({basis_bps:.1f} bps)"
+                        ),
+                        legs=[
+                            OpportunityLeg(
+                                exchange=buy_venue.exchange,
+                                venue_type=buy_venue.venue_type,
+                                side="buy",
+                                symbol=f"{asset}/USDT",
+                                price=buy_venue.ask if hasattr(buy_venue, "ask") else buy_venue.mark_price,  # type: ignore
+                                quantity=round(quantity, 6),
+                            ),
+                            OpportunityLeg(
+                                exchange=sell_venue.exchange,
+                                venue_type=sell_venue.venue_type,
+                                side="sell",
+                                symbol=f"{asset}/USDT",
+                                price=sell_venue.bid if hasattr(sell_venue, "bid") else sell_venue.mark_price,  # type: ignore
+                                quantity=round(quantity, 6),
+                            ),
+                        ],
+                        metadata={
+                            "basis_bps": round(basis_bps, 2),
+                            "spot_exchange": spot.exchange,
+                            "perp_exchange": perp.exchange,
+                            "perp_funding_8h_pct": round(perp.funding_rate_8h * 100, 4),
+                            "perp_oi_usd": round(perp.open_interest_usd, 2),
+                        },
+                    )
+                    opportunities.append(opportunity)
+
+        return sorted(opportunities, key=lambda opp: opp.expected_pnl_pct, reverse=True)
+
+    def _generate_perp_perp_spread(self, perp_data: Sequence[PerpMarketData]) -> list[Opportunity]:
+        """Generate perpetual vs perpetual spread arbitrage opportunities / 선물 vs 선물 스프레드 차익거래 기회 생성."""
+        opportunities: list[Opportunity] = []
+        min_oi_usd = 100_000
+
+        # Group by base asset
+        grouped: dict[str, list[PerpMarketData]] = defaultdict(list)
+        for perp in perp_data:
+            if perp.open_interest_usd >= min_oi_usd:
+                grouped[perp.base_asset].append(perp)
+
+        for asset, asset_perps in grouped.items():
+            if len(asset_perps) < 2:
+                continue
+
+            for i, perp1 in enumerate(asset_perps):
+                for perp2 in asset_perps[i + 1 :]:
+                    # Calculate price spread
+                    spread = perp2.bid - perp1.ask
+                    spread_bps = (spread / perp1.mark_price) * 10000 if perp1.mark_price > 0 else 0
+
+                    if spread_bps <= 0:
+                        continue
+                    if spread_bps > self._settings.max_spread_bps:
+                        continue
+
+                    # Consider funding rate differential
+                    funding_diff = abs(perp1.funding_rate_8h - perp2.funding_rate_8h)
+
+                    expected_pnl_pct = (spread_bps / 100) - 0.001  # Approximate fees for perp trading
+                    if expected_pnl_pct <= 0:
+                        continue
+
+                    notional = self._settings.simulated_base_notional
+                    quantity = notional / perp1.mark_price
+
+                    opportunity = Opportunity(
+                        id=str(uuid.uuid4()),
+                        type=OpportunityType.PERP_PERP_SPREAD,
+                        symbol=f"{asset}/USDT:USDT",
+                        spread_bps=round(spread_bps, 3),
+                        expected_pnl_pct=round(expected_pnl_pct * 100, 3),
+                        notional=round(notional, 2),
+                        timestamp=datetime.utcnow(),
+                        description=(
+                            f"Perp spread: Buy {perp1.exchange} @{perp1.ask:.2f}, "
+                            f"Sell {perp2.exchange} @{perp2.bid:.2f} / "
+                            f"선물 스프레드: {perp1.exchange} 매수 @{perp1.ask:.2f}, "
+                            f"{perp2.exchange} 매도 @{perp2.bid:.2f}"
+                        ),
+                        legs=[
+                            OpportunityLeg(
+                                exchange=perp1.exchange,
+                                venue_type="perp",
+                                side="buy",
+                                symbol=f"{asset}/USDT:USDT",
+                                price=perp1.ask,
+                                quantity=round(quantity, 6),
+                            ),
+                            OpportunityLeg(
+                                exchange=perp2.exchange,
+                                venue_type="perp",
+                                side="sell",
+                                symbol=f"{asset}/USDT:USDT",
+                                price=perp2.bid,
+                                quantity=round(quantity, 6),
+                            ),
+                        ],
+                        metadata={
+                            "funding_diff_8h_pct": round(funding_diff * 100, 4),
+                            "perp1_funding_8h_pct": round(perp1.funding_rate_8h * 100, 4),
+                            "perp1_oi_usd": round(perp1.open_interest_usd, 2),
+                            "perp2_funding_8h_pct": round(perp2.funding_rate_8h * 100, 4),
+                            "perp2_oi_usd": round(perp2.open_interest_usd, 2),
+                        },
+                    )
+                    opportunities.append(opportunity)
+
+        return sorted(opportunities, key=lambda opp: opp.expected_pnl_pct, reverse=True)
 
     def _evaluate_allocation(self, premium_pct: float) -> float:
         if not self._tether_curve:

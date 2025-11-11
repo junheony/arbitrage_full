@@ -16,6 +16,10 @@ from app.connectors.fx_rates import KRWUSDForexConnector
 from app.connectors.okx_spot import OkxSpotConnector
 from app.connectors.simulated import SimulatedConnector
 from app.connectors.upbit_spot import UpbitSpotConnector
+from app.connectors.binance_perp import BinancePerpConnector
+from app.connectors.bybit_perp import BybitPerpConnector
+from app.connectors.hyperliquid_perp import HyperliquidPerpConnector
+from app.connectors.base_perp import BasePerpConnector
 from app.core.config import get_settings
 from app.services.opportunity_engine import OpportunityEngine
 
@@ -95,14 +99,45 @@ async def startup_event() -> None:
 
     connectors.append(KRWUSDForexConnector())
 
-    connectors.append(
-        SimulatedConnector(
-            name="bybit",
-            venue_type="perp",
-            base_spreads_bps=8,
-            symbols=settings.trading_symbols,
+    # Add perpetual futures connectors / 무기한 선물 커넥터 추가
+    if settings.enable_perp_connectors:
+        if settings.enable_binance_perp:
+            try:
+                connectors.append(BinancePerpConnector(settings.trading_symbols))
+                logger.info("Binance perpetual futures connector enabled / 바이낸스 무기한 선물 커넥터 활성화")
+            except Exception as exc:  # pylint: disable=broad-except
+                logger.exception("Failed to initialize Binance perp connector: %s", exc)
+
+        if settings.enable_bybit_perp:
+            try:
+                connectors.append(BybitPerpConnector(settings.trading_symbols))
+                logger.info("Bybit perpetual futures connector enabled / 바이빗 무기한 선물 커넥터 활성화")
+            except Exception as exc:  # pylint: disable=broad-except
+                logger.exception("Failed to initialize Bybit perp connector: %s", exc)
+
+        if settings.enable_hyperliquid_perp:
+            try:
+                connectors.append(HyperliquidPerpConnector(settings.trading_symbols))
+                logger.info("Hyperliquid DEX perpetual connector enabled / 하이퍼리퀴드 DEX 무기한 선물 커넥터 활성화")
+            except Exception as exc:  # pylint: disable=broad-except
+                logger.exception("Failed to initialize Hyperliquid perp connector: %s", exc)
+
+        if settings.enable_base_perp:
+            try:
+                connectors.append(BasePerpConnector(settings.trading_symbols))
+                logger.info("Base network (Synthetix) perpetual connector enabled / Base 네트워크 (Synthetix) 무기한 선물 커넥터 활성화")
+            except Exception as exc:  # pylint: disable=broad-except
+                logger.exception("Failed to initialize Base perp connector: %s", exc)
+    else:
+        # Add simulated perpetual connector for demo / 데모용 시뮬레이션 무기한 선물 커넥터 추가
+        connectors.append(
+            SimulatedConnector(
+                name="bybit",
+                venue_type="perp",
+                base_spreads_bps=8,
+                symbols=settings.trading_symbols,
+            )
         )
-    )
 
     if settings.enable_ccxt_spot and CCXT_AVAILABLE:
         for exchange_id in settings.ccxt_spot_exchanges:

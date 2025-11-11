@@ -7,7 +7,8 @@ from typing import Any, Literal, Optional
 class OpportunityType(str, Enum):
     SPOT_CROSS = "spot_cross"
     SPOT_VS_PERP = "spot_vs_perp"
-    FUNDING = "funding"
+    PERP_PERP_SPREAD = "perp_perp_spread"
+    FUNDING_ARB = "funding_arb"
     KIMCHI_PREMIUM = "kimchi_premium"
 
 

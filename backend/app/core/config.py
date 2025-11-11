@@ -52,6 +52,32 @@ class Settings(BaseSettings):
         description="CCXT exchange IDs for spot connectors.",
     )
 
+    # Perpetual futures connectors / 무기한 선물 커넥터
+    enable_perp_connectors: bool = Field(
+        default=False,
+        description="Enable perpetual futures connectors for funding arbitrage.",
+    )
+    enable_binance_perp: bool = Field(
+        default=False,
+        description="Enable Binance perpetual futures connector.",
+    )
+    enable_bybit_perp: bool = Field(
+        default=False,
+        description="Enable Bybit perpetual futures connector.",
+    )
+    enable_hyperliquid_perp: bool = Field(
+        default=False,
+        description="Enable Hyperliquid DEX perpetual connector.",
+    )
+    enable_base_perp: bool = Field(
+        default=False,
+        description="Enable Base network (Synthetix) perpetual connector.",
+    )
+    min_open_interest_usd: float = Field(
+        default=100_000.0,
+        description="Minimum open interest in USD to consider for perp arbitrage.",
+    )
+
     # Tether bot configuration / 테더봇 설정
     tether_total_equity_usd: float = Field(
         100000.0,
