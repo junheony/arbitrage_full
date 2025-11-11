@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { login, register, type LoginRequest, type RegisterRequest } from './api';
 import { saveToken } from './auth';
-import './LoginModal.css';
 
 interface LoginModalProps {
   isOpen: boolean;
@@ -46,28 +45,50 @@ export function LoginModal({ isOpen, onClose, onSuccess }: LoginModalProps) {
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-        <button className="modal-close" onClick={onClose}>✕</button>
+    <div className="modal modal-open" onClick={onClose}>
+      <div className="modal-box max-w-md bg-base-200 border border-base-300 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        {/* Close Button */}
+        <button
+          className="btn btn-sm btn-circle btn-ghost absolute right-4 top-4"
+          onClick={onClose}
+        >
+          <i className="fas fa-times text-lg"></i>
+        </button>
 
-        <h2>{mode === 'login' ? 'Login / 로그인' : 'Register / 회원가입'}</h2>
+        {/* Title */}
+        <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+          <i className={`fas ${mode === 'login' ? 'fa-sign-in-alt' : 'fa-user-plus'} text-primary`}></i>
+          {mode === 'login' ? 'Login / 로그인' : 'Register / 회원가입'}
+        </h2>
 
-        <form onSubmit={handleSubmit}>
+        {/* Form */}
+        <form onSubmit={handleSubmit} className="space-y-4">
           {mode === 'register' && (
-            <div className="form-group">
-              <label htmlFor="fullName">Full Name / 이름 (optional)</label>
+            <div className="form-control">
+              <label htmlFor="fullName" className="label">
+                <span className="label-text">
+                  <i className="fas fa-user mr-2"></i>
+                  Full Name / 이름 (optional)
+                </span>
+              </label>
               <input
                 id="fullName"
                 type="text"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 placeholder="John Doe"
+                className="input input-bordered bg-base-300 w-full focus:input-primary"
               />
             </div>
           )}
 
-          <div className="form-group">
-            <label htmlFor="email">Email / 이메일 *</label>
+          <div className="form-control">
+            <label htmlFor="email" className="label">
+              <span className="label-text">
+                <i className="fas fa-envelope mr-2"></i>
+                Email / 이메일 *
+              </span>
+            </label>
             <input
               id="email"
               type="email"
@@ -75,11 +96,17 @@ export function LoginModal({ isOpen, onClose, onSuccess }: LoginModalProps) {
               onChange={(e) => setEmail(e.target.value)}
               required
               placeholder="user@example.com"
+              className="input input-bordered bg-base-300 w-full focus:input-primary"
             />
           </div>
 
-          <div className="form-group">
-            <label htmlFor="password">Password / 비밀번호 *</label>
+          <div className="form-control">
+            <label htmlFor="password" className="label">
+              <span className="label-text">
+                <i className="fas fa-lock mr-2"></i>
+                Password / 비밀번호 *
+              </span>
+            </label>
             <input
               id="password"
               type="password"
@@ -88,25 +115,54 @@ export function LoginModal({ isOpen, onClose, onSuccess }: LoginModalProps) {
               required
               placeholder="••••••••"
               minLength={6}
+              className="input input-bordered bg-base-300 w-full focus:input-primary"
             />
+            <label className="label">
+              <span className="label-text-alt text-base-content/60">
+                <i className="fas fa-info-circle mr-1"></i>
+                Minimum 6 characters / 최소 6자
+              </span>
+            </label>
           </div>
 
-          {error && <div className="form-error">{error}</div>}
+          {error && (
+            <div className="alert alert-error">
+              <i className="fas fa-exclamation-circle"></i>
+              <span className="text-sm">{error}</span>
+            </div>
+          )}
 
-          <button type="submit" className="form-submit" disabled={isLoading}>
-            {isLoading ? '⏳ Processing...' : mode === 'login' ? 'Login / 로그인' : 'Register / 회원가입'}
+          <button
+            type="submit"
+            className={`btn btn-primary w-full gap-2 ${isLoading ? 'loading' : ''}`}
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <>
+                <i className="fas fa-spinner fa-spin"></i>
+                Processing...
+              </>
+            ) : (
+              <>
+                <i className={`fas ${mode === 'login' ? 'fa-sign-in-alt' : 'fa-user-plus'}`}></i>
+                {mode === 'login' ? 'Login / 로그인' : 'Register / 회원가입'}
+              </>
+            )}
           </button>
         </form>
 
-        <div className="form-footer">
+        {/* Mode Toggle */}
+        <div className="divider"></div>
+        <div className="text-center">
           <button
             type="button"
             onClick={() => {
               setMode(mode === 'login' ? 'register' : 'login');
               setError(null);
             }}
-            className="mode-toggle"
+            className="btn btn-ghost btn-sm text-primary gap-2"
           >
+            <i className={`fas ${mode === 'login' ? 'fa-user-plus' : 'fa-sign-in-alt'}`}></i>
             {mode === 'login'
               ? '계정이 없으신가요? 회원가입 / No account? Register'
               : '이미 계정이 있으신가요? 로그인 / Have an account? Login'}
