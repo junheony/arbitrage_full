@@ -52,13 +52,12 @@ export function LoginModal({ isOpen, onClose, onSuccess }: LoginModalProps) {
           className="btn btn-sm btn-circle btn-ghost absolute right-4 top-4"
           onClick={onClose}
         >
-          <i className="fas fa-times text-lg"></i>
+          ✕
         </button>
 
         {/* Title */}
-        <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-3">
-          <i className={`fas ${mode === 'login' ? 'fa-sign-in-alt' : 'fa-user-plus'} text-primary`}></i>
-          {mode === 'login' ? 'Login / 로그인' : 'Register / 회원가입'}
+        <h2 className="text-2xl font-bold text-white mb-6">
+          {mode === 'login' ? '🔐 Login / 로그인' : '👤 Register / 회원가입'}
         </h2>
 
         {/* Form */}
@@ -67,7 +66,6 @@ export function LoginModal({ isOpen, onClose, onSuccess }: LoginModalProps) {
             <div className="form-control">
               <label htmlFor="fullName" className="label">
                 <span className="label-text">
-                  <i className="fas fa-user mr-2"></i>
                   Full Name / 이름 (optional)
                 </span>
               </label>
@@ -85,8 +83,7 @@ export function LoginModal({ isOpen, onClose, onSuccess }: LoginModalProps) {
           <div className="form-control">
             <label htmlFor="email" className="label">
               <span className="label-text">
-                <i className="fas fa-envelope mr-2"></i>
-                Email / 이메일 *
+                📧 Email / 이메일 *
               </span>
             </label>
             <input
@@ -103,8 +100,7 @@ export function LoginModal({ isOpen, onClose, onSuccess }: LoginModalProps) {
           <div className="form-control">
             <label htmlFor="password" className="label">
               <span className="label-text">
-                <i className="fas fa-lock mr-2"></i>
-                Password / 비밀번호 *
+                🔒 Password / 비밀번호 *
               </span>
             </label>
             <input
@@ -119,7 +115,6 @@ export function LoginModal({ isOpen, onClose, onSuccess }: LoginModalProps) {
             />
             <label className="label">
               <span className="label-text-alt text-base-content/60">
-                <i className="fas fa-info-circle mr-1"></i>
                 Minimum 6 characters / 최소 6자
               </span>
             </label>
@@ -127,26 +122,22 @@ export function LoginModal({ isOpen, onClose, onSuccess }: LoginModalProps) {
 
           {error && (
             <div className="alert alert-error">
-              <i className="fas fa-exclamation-circle"></i>
-              <span className="text-sm">{error}</span>
+              <span className="text-sm">⚠️ {error}</span>
             </div>
           )}
 
           <button
             type="submit"
-            className={`btn btn-primary w-full gap-2 ${isLoading ? 'loading' : ''}`}
+            className="btn btn-primary w-full"
             disabled={isLoading}
           >
             {isLoading ? (
               <>
-                <i className="fas fa-spinner fa-spin"></i>
+                <span className="loading loading-spinner loading-sm"></span>
                 Processing...
               </>
             ) : (
-              <>
-                <i className={`fas ${mode === 'login' ? 'fa-sign-in-alt' : 'fa-user-plus'}`}></i>
-                {mode === 'login' ? 'Login / 로그인' : 'Register / 회원가입'}
-              </>
+              mode === 'login' ? 'Login / 로그인' : 'Register / 회원가입'
             )}
           </button>
         </form>
@@ -160,9 +151,8 @@ export function LoginModal({ isOpen, onClose, onSuccess }: LoginModalProps) {
               setMode(mode === 'login' ? 'register' : 'login');
               setError(null);
             }}
-            className="btn btn-ghost btn-sm text-primary gap-2"
+            className="btn btn-ghost btn-sm text-primary"
           >
-            <i className={`fas ${mode === 'login' ? 'fa-user-plus' : 'fa-sign-in-alt'}`}></i>
             {mode === 'login'
               ? '계정이 없으신가요? 회원가입 / No account? Register'
               : '이미 계정이 있으신가요? 로그인 / Have an account? Login'}

@@ -36,12 +36,10 @@ function App() {
       {/* Header */}
       <header className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 mb-8">
         <div>
-          <h1 className="text-3xl lg:text-4xl font-bold text-white mb-2 flex items-center gap-3">
-            <i className="fas fa-chart-line text-primary"></i>
-            Arbitrage Command / 아비트리지 커맨드
+          <h1 className="text-3xl lg:text-4xl font-bold text-white mb-2">
+            📈 Arbitrage Command / 아비트리지 커맨드
           </h1>
           <p className="text-sm text-base-content/60">
-            <i className="fas fa-radar mr-2"></i>
             Kimchi premium · funding · basis radar / 김프 · 펀딩 · 현선 레이더
           </p>
         </div>
@@ -53,7 +51,6 @@ function App() {
                 {topSpread ? `${topSpread.toFixed(2)} bps` : "-"}
               </div>
               <div className="stat-desc text-xs">
-                <i className="far fa-clock mr-1"></i>
                 {lastUpdated
                   ? dayjs(lastUpdated).fromNow()
                   : "Awaiting data / 데이터 수신 중"}
@@ -64,17 +61,15 @@ function App() {
             {authenticated ? (
               <button
                 onClick={handleLogout}
-                className="btn btn-error btn-sm lg:btn-md gap-2"
+                className="btn btn-error btn-sm lg:btn-md"
               >
-                <i className="fas fa-sign-out-alt"></i>
                 Logout / 로그아웃
               </button>
             ) : (
               <button
                 onClick={() => setShowLogin(true)}
-                className="btn btn-primary btn-sm lg:btn-md gap-2"
+                className="btn btn-primary btn-sm lg:btn-md"
               >
-                <i className="fas fa-sign-in-alt"></i>
                 Login / 로그인
               </button>
             )}
@@ -90,8 +85,7 @@ function App() {
 
       {error && (
         <div className="alert alert-error shadow-lg mb-6">
-          <i className="fas fa-exclamation-triangle text-xl"></i>
-          <span>{error}</span>
+          <span>⚠️ {error}</span>
         </div>
       )}
 
@@ -99,12 +93,12 @@ function App() {
       <section className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
         {isLoading && opportunities.length === 0 ? (
           <div className="col-span-full flex flex-col items-center justify-center py-20 bg-base-200/50 rounded-2xl border-2 border-dashed border-base-300">
-            <i className="fas fa-spinner fa-spin text-4xl text-primary mb-4"></i>
+            <span className="loading loading-spinner loading-lg text-primary mb-4"></span>
             <p className="text-base-content/60">Loading live opportunities… / 실시간 기회를 불러오는 중…</p>
           </div>
         ) : opportunities.length === 0 ? (
           <div className="col-span-full flex flex-col items-center justify-center py-20 bg-base-200/50 rounded-2xl border-2 border-dashed border-base-300">
-            <i className="fas fa-search-dollar text-4xl text-base-content/40 mb-4"></i>
+            <p className="text-4xl mb-4">🔍</p>
             <p className="text-base-content/60">No executable spreads right now / 현재 체결 가능한 스프레드가 없습니다.</p>
           </div>
         ) : (
@@ -201,11 +195,9 @@ function OpportunityCard({ opportunity }: OpportunityCardProps) {
         <div className="flex justify-between items-start gap-4 mb-3">
           <div>
             <h2 className="card-title text-2xl text-white mb-2">
-              <i className="fas fa-bitcoin-sign text-warning"></i>
-              {opportunity.symbol}
+              {getSymbolEmoji(opportunity.symbol)} {opportunity.symbol}
             </h2>
-            <div className={`badge badge-lg gap-2 ${getBadgeClass(opportunity.type)}`}>
-              <i className={`fas ${getTypeIcon(opportunity.type)}`}></i>
+            <div className={`badge badge-lg ${getBadgeClass(opportunity.type)}`}>
               {renderTypeLabel(opportunity.type)}
             </div>
           </div>
@@ -213,7 +205,6 @@ function OpportunityCard({ opportunity }: OpportunityCardProps) {
 
         {/* Description */}
         <p className="text-sm text-base-content/70 mb-4 leading-relaxed">
-          <i className="fas fa-info-circle mr-2"></i>
           {opportunity.description}
         </p>
 
@@ -242,9 +233,8 @@ function OpportunityCard({ opportunity }: OpportunityCardProps) {
         <div className="bg-base-100/80 rounded-lg p-4 border border-base-300/50 space-y-3 mb-4">
           {opportunity.legs.map((leg, index) => (
             <div key={index} className="flex justify-between items-center text-sm">
-              <div className={`badge ${leg.side === "buy" ? "badge-success" : "badge-error"} gap-2`}>
-                <i className={`fas ${leg.side === "buy" ? "fa-arrow-up" : "fa-arrow-down"}`}></i>
-                {leg.side === "buy" ? "BUY / 매수" : "SELL / 매도"}
+              <div className={`badge ${leg.side === "buy" ? "badge-success" : "badge-error"}`}>
+                {leg.side === "buy" ? "↑ BUY / 매수" : "↓ SELL / 매도"}
               </div>
               <div className="text-base-content/80">
                 <span className="font-bold">{leg.exchange.toUpperCase()}</span>
@@ -261,25 +251,22 @@ function OpportunityCard({ opportunity }: OpportunityCardProps) {
         {/* Action Buttons */}
         <div className="card-actions justify-end gap-2">
           <button
-            className="btn btn-sm btn-outline btn-info gap-2"
+            className="btn btn-sm btn-outline btn-info"
             onClick={() => handleExecute(true)}
             disabled={isExecuting || !authenticated}
             title={!authenticated ? "Login required / 로그인 필요" : "Simulate execution / 실행 시뮬레이션"}
           >
             {isExecuting ? (
               <>
-                <i className="fas fa-spinner fa-spin"></i>
+                <span className="loading loading-spinner loading-sm"></span>
                 Processing...
               </>
             ) : (
-              <>
-                <i className="fas fa-flask"></i>
-                Dry Run / 시뮬레이션
-              </>
+              "🧪 Dry Run / 시뮬레이션"
             )}
           </button>
           <button
-            className={`btn btn-sm gap-2 ${authenticated ? 'btn-error' : 'btn-disabled'}`}
+            className={`btn btn-sm ${authenticated ? 'btn-error' : 'btn-disabled'}`}
             onClick={() => {
               if (window.confirm("Execute REAL orders? This will place actual trades! / 실제 주문을 체결하시겠습니까?")) {
                 handleExecute(false);
@@ -290,20 +277,24 @@ function OpportunityCard({ opportunity }: OpportunityCardProps) {
           >
             {isExecuting ? (
               <>
-                <i className="fas fa-spinner fa-spin"></i>
+                <span className="loading loading-spinner loading-sm"></span>
                 Processing...
               </>
             ) : (
-              <>
-                <i className="fas fa-bolt"></i>
-                Execute / 실행
-              </>
+              "⚡ Execute / 실행"
             )}
           </button>
         </div>
       </div>
     </article>
   );
+}
+
+function getSymbolEmoji(symbol: string): string {
+  if (symbol.includes("BTC")) return "₿";
+  if (symbol.includes("ETH")) return "Ξ";
+  if (symbol.includes("XRP")) return "✕";
+  return "💱";
 }
 
 function getBadgeClass(type: Opportunity["type"]): string {
@@ -318,21 +309,6 @@ function getBadgeClass(type: Opportunity["type"]): string {
       return "badge-error";
     default:
       return "badge-ghost";
-  }
-}
-
-function getTypeIcon(type: Opportunity["type"]): string {
-  switch (type) {
-    case "spot_cross":
-      return "fa-exchange-alt";
-    case "spot_vs_perp":
-      return "fa-chart-area";
-    case "funding":
-      return "fa-coins";
-    case "kimchi_premium":
-      return "fa-pepper-hot";
-    default:
-      return "fa-question";
   }
 }
 
