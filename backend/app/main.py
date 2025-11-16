@@ -9,6 +9,7 @@ from app.api.routes import router as api_router
 from app.api.auth_routes import router as auth_router
 from app.api.portfolio_routes import router as portfolio_router
 from app.api.execution_routes import router as execution_router
+from app.api.autotrading_routes import router as autotrading_router
 from app.db.init_db import init_db
 from app.connectors.binance_spot import BinanceSpotConnector
 from app.connectors.bithumb_spot import BithumbSpotConnector
@@ -23,6 +24,7 @@ from app.connectors.lighter_perp import LighterPerpConnector
 from app.connectors.edgex_perp import EdgeXPerpConnector
 from app.core.config import get_settings
 from app.services.opportunity_engine import OpportunityEngine
+from app.services.fill_monitor import start_fill_monitor, stop_fill_monitor
 
 # Optional CCXT import / 선택적 CCXT 임포트
 try:
@@ -43,7 +45,7 @@ app = FastAPI(title=settings.app_name)
 # Allow local frontend dev server during MVP.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:5174", "http://127.0.0.1:5174"],
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:5174", "http://127.0.0.1:5174", "http://localhost:5175", "http://127.0.0.1:5175"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -52,6 +54,7 @@ app.include_router(api_router, prefix="/api")
 app.include_router(auth_router, prefix="/api/auth")
 app.include_router(portfolio_router, prefix="/api/portfolio")
 app.include_router(execution_router, prefix="/api/execution")
+app.include_router(autotrading_router, prefix="/api/autotrading")
 
 
 @app.on_event("startup")
@@ -171,9 +174,17 @@ async def startup_event() -> None:
     app.state.opportunity_engine = engine
     logger.info("Opportunity engine initialised. / 기회 엔진 초기화 완료.")
 
+    # Start fill monitor for tracking order execution / 주문 체결 모니터 시작
+    await start_fill_monitor()
+    logger.info("Fill monitor started. / 체결 모니터 시작됨.")
+
 
 @app.on_event("shutdown")
 async def shutdown_event() -> None:
+    # Stop fill monitor / 체결 모니터 중지
+    await stop_fill_monitor()
+    logger.info("Fill monitor stopped. / 체결 모니터 중지됨.")
+
     engine: OpportunityEngine | None = getattr(app.state, "opportunity_engine", None)
     if engine:
         await engine.stop()

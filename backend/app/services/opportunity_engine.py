@@ -10,6 +10,7 @@ from typing import Awaitable, Sequence
 
 from app.connectors.base import MarketConnector
 from app.connectors.perp_base import PerpConnector
+from app.connectors.deposit_status import get_deposit_checker
 from app.core.config import get_settings
 from app.models.opportunity import MarketQuote, Opportunity, OpportunityLeg, OpportunityType
 from app.models.market_data import FundingRate, PerpMarketData
@@ -34,6 +35,7 @@ class OpportunityEngine:
         self._listeners: list[asyncio.Queue[list[Opportunity]]] = []
         self._task: asyncio.Task[None] | None = None
         self._stop_event = asyncio.Event()
+        self._deposit_checker = get_deposit_checker()
 
     def latest(self) -> list[Opportunity]:
         return self._latest
@@ -95,15 +97,23 @@ class OpportunityEngine:
         quotes = await self._gather_quotes()
         perp_data = await self._gather_perp_data()
 
-        opportunities = self._generate_spot_cross(quotes)
-        opportunities.extend(self._generate_kimchi_premium(quotes))
-        opportunities.extend(self._generate_funding_arb(perp_data))
-        opportunities.extend(self._generate_spot_perp_basis(quotes, perp_data))
+        # Disabled spot strategies - require asset ownership or margin/loan capability
+        # Spot 전략 비활성화 - 자산 보유 또는 대출/마진 기능 필요
+        # opportunities = self._generate_spot_cross(quotes)
+        # opportunities.extend(self._generate_kimchi_premium(quotes))
+        # opportunities.extend(self._generate_spot_perp_basis(quotes, perp_data))
+
+        # Focus on perpetual futures strategies - executable with cash/margin only
+        # 무기한 선물 전략에 집중 - 현금/마진만으로 실행 가능
+        opportunities = self._generate_funding_arb(perp_data)
         opportunities.extend(self._generate_perp_perp_spread(perp_data))
 
-        if not opportunities:
-            opportunities = self._generate_placeholder_opportunities()
-        self._latest = opportunities
+        # Filter out opportunities with blocked deposits/withdrawals
+        # 입출금이 막힌 기회는 필터링
+        filtered_opportunities = await self._filter_by_deposit_status(opportunities)
+
+        # No placeholder opportunities - only show real trading signals
+        self._latest = filtered_opportunities
         for queue in list(self._listeners):
             if queue.full():
                 # Drop oldest update to keep queue fresh.
@@ -111,7 +121,7 @@ class OpportunityEngine:
                     queue.get_nowait()
                 except asyncio.QueueEmpty:
                     pass
-            await queue.put(opportunities)
+            await queue.put(filtered_opportunities)
 
     async def _gather_quotes(self) -> list[MarketQuote]:
         tasks: list[Awaitable[Sequence[MarketQuote]]] = [
@@ -156,8 +166,11 @@ class OpportunityEngine:
         return perp_data
 
     def _generate_spot_cross(self, quotes: Sequence[MarketQuote]) -> list[Opportunity]:
+        # Filter out only spot quotes, exclude perp and fx
+        spot_quotes = [q for q in quotes if q.venue_type == "spot"]
+
         grouped: dict[tuple[str, str], list[MarketQuote]] = defaultdict(list)
-        for quote in quotes:
+        for quote in spot_quotes:
             grouped[(quote.base_asset, quote.quote_currency)].append(quote)
 
         opportunities: list[Opportunity] = []
@@ -216,9 +229,12 @@ class OpportunityEngine:
         fx_mid = sum(q.mid_price for q in fx_quotes) / len(fx_quotes)
         if fx_mid <= 0:
             return []
+        # Filter spot quotes only for kimchi premium calculation
+        spot_quotes = [q for q in quotes if q.venue_type == "spot"]
+
         global_quotes: dict[str, list[MarketQuote]] = defaultdict(list)
         krw_quotes: dict[str, list[MarketQuote]] = defaultdict(list)
-        for quote in quotes:
+        for quote in spot_quotes:
             if quote.quote_currency in {"USDT", "USD"}:
                 global_quotes[quote.base_asset].append(quote)
             elif quote.quote_currency == "KRW":
@@ -239,6 +255,12 @@ class OpportunityEngine:
                 if quantity <= 0:
                     continue
                 allocation_fraction = self._evaluate_allocation(premium_pct * 100)
+                allocation_pct = allocation_fraction * 100
+
+                # Filter out low-allocation opportunities (noise)
+                if allocation_pct < self._settings.min_kimchi_allocation_pct:
+                    continue
+
                 recommended_notional = allocation_fraction * self._tether_equity
                 recommended_action = "sell_krw" if premium_pct >= 0 else "buy_krw"
                 legs = self._build_kimchi_legs(
@@ -598,6 +620,37 @@ class OpportunityEngine:
                     opportunities.append(opportunity)
 
         return sorted(opportunities, key=lambda opp: opp.expected_pnl_pct, reverse=True)
+
+    async def _filter_by_deposit_status(self, opportunities: list[Opportunity]) -> list[Opportunity]:
+        """Filter out opportunities where deposits/withdrawals are blocked / 입출금이 막힌 기회 필터링."""
+        filtered = []
+        for opp in opportunities:
+            # Check all legs to see if deposits/withdrawals are enabled
+            is_tradeable = True
+            for leg in opp.legs:
+                exchange = leg.exchange
+                base_asset = leg.symbol.split("/")[0] if "/" in leg.symbol else leg.symbol.split(":")[0]
+
+                # Check deposit/withdrawal status
+                tradeable = await self._deposit_checker.is_trading_enabled(exchange, base_asset)
+                if not tradeable:
+                    logger.debug(
+                        f"Filtering {opp.type} opportunity {opp.symbol}: "
+                        f"{base_asset} deposits/withdrawals disabled on {exchange}"
+                    )
+                    is_tradeable = False
+                    break
+
+            if is_tradeable:
+                filtered.append(opp)
+
+        if len(opportunities) > len(filtered):
+            logger.info(
+                f"Filtered {len(opportunities) - len(filtered)} opportunities due to deposit/withdrawal restrictions / "
+                f"입출금 제한으로 {len(opportunities) - len(filtered)}개 기회 필터링됨"
+            )
+
+        return filtered
 
     def _evaluate_allocation(self, premium_pct: float) -> float:
         if not self._tether_curve:

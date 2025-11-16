@@ -9,7 +9,7 @@ interface UseOpportunitiesResult {
   lastUpdated: Date | null;
 }
 
-const WS_ENDPOINT = `${API_WS_BASE}/opportunities`;
+const WS_ENDPOINT = `${API_WS_BASE}/ws/opportunities`;
 const HTTP_ENDPOINT = `${API_HTTP_BASE}/opportunities`;
 
 export function useOpportunities(): UseOpportunitiesResult {

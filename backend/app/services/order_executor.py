@@ -5,12 +5,14 @@ import logging
 from datetime import datetime
 from typing import Any
 
+import ccxt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.db_models import (
     ExchangeCredential,
     ExecutionLog,
+    Fill,
     Order,
     OrderStatus,
     OpportunityHistory,
@@ -18,6 +20,7 @@ from app.models.db_models import (
     User,
 )
 from app.models.opportunity import Opportunity
+from app.services.exchange_client import ExchangeClientFactory
 
 logger = logging.getLogger(__name__)
 
@@ -163,10 +166,87 @@ class OrderExecutor:
                 f"Too many open orders ({len(open_orders)}) / 미체결 주문이 너무 많음 ({len(open_orders)})"
             )
 
-        # TODO: Check daily loss limit
-        # TODO: Check margin requirements
+        # Check daily loss limit
+        await self._check_daily_loss_limit(user_id, limits)
+
+        # Check leverage for perpetual futures
+        if any(leg.venue_type == "perp" for leg in opportunity.legs):
+            if opportunity.notional * limits.max_leverage > limits.max_position_size_usd:
+                raise RiskCheckFailed(
+                    f"Leveraged position size exceeds limit / 레버리지 포지션 크기가 한도 초과"
+                )
 
         logger.info("Risk checks passed for user %d / 사용자 %d 리스크 체크 통과", user_id, user_id)
+
+    async def _check_daily_loss_limit(self, user_id: int, limits: RiskLimit) -> None:
+        """
+        Check if daily loss limit has been exceeded.
+        일일 손실 한도 초과 여부 확인.
+        """
+        # Calculate start of current day (UTC)
+        from datetime import date, timedelta
+
+        today_start = datetime.combine(date.today(), datetime.min.time())
+
+        # Get all filled orders from today
+        result = await self.db.execute(
+            select(Order).where(
+                Order.user_id == user_id,
+                Order.status == OrderStatus.FILLED,
+                Order.filled_at >= today_start,
+            )
+        )
+        todays_orders = list(result.scalars().all())
+
+        if not todays_orders:
+            return  # No orders today, no loss
+
+        # Calculate total PnL from today's orders
+        # For arbitrage: compare expected vs actual execution prices
+        total_loss = 0.0
+
+        for order in todays_orders:
+            # Get fills for this order
+            fills_result = await self.db.execute(
+                select(Fill).where(Fill.order_id == order.id)
+            )
+            fills = list(fills_result.scalars().all())
+
+            if not fills:
+                continue
+
+            # Calculate average fill price
+            total_qty = sum(f.quantity for f in fills)
+            total_value = sum(f.quantity * f.price for f in fills)
+            avg_fill_price = total_value / total_qty if total_qty > 0 else 0
+
+            # Calculate slippage loss (difference from expected price)
+            if order.price:  # Expected price
+                expected_value = order.quantity * order.price
+                actual_value = total_value
+                slippage = expected_value - actual_value if order.side == "buy" else actual_value - expected_value
+
+                if slippage < 0:  # Loss
+                    total_loss += abs(slippage)
+
+            # Add fees
+            total_fees = sum(f.fee for f in fills)
+            total_loss += total_fees
+
+        # Check against limit
+        if total_loss > limits.max_daily_loss_usd:
+            raise RiskCheckFailed(
+                f"Daily loss ${total_loss:.2f} exceeds limit ${limits.max_daily_loss_usd} / "
+                f"일일 손실 ${total_loss:.2f}이 한도 ${limits.max_daily_loss_usd}를 초과"
+            )
+
+        logger.info(
+            "Daily loss check passed: $%s / $%s / 일일 손실 체크 통과: $%s / $%s",
+            total_loss,
+            limits.max_daily_loss_usd,
+            total_loss,
+            limits.max_daily_loss_usd,
+        )
 
     async def _get_credentials(
         self, user_id: int, opportunity: Opportunity
@@ -207,71 +287,208 @@ class OrderExecutor:
         Submit orders to exchanges.
         거래소에 주문 제출.
 
-        NOTE: This is a STUB implementation for demonstration.
-        In production, this would:
-        1. Decrypt API keys
-        2. Create exchange clients (CCXT, native SDKs)
-        3. Submit actual orders
-        4. Handle exchange-specific errors
-        5. Return exchange order IDs
+        This implementation:
+        1. Decrypts API keys
+        2. Creates exchange clients (CCXT)
+        3. Submits actual orders
+        4. Handles exchange-specific errors
+        5. Returns exchange order IDs
 
-        주의: 이것은 데모용 스텁 구현입니다.
-        프로덕션에서는:
+        구현 내용:
         1. API 키 복호화
-        2. 거래소 클라이언트 생성 (CCXT, 네이티브 SDK)
+        2. 거래소 클라이언트 생성 (CCXT)
         3. 실제 주문 제출
         4. 거래소별 오류 처리
         5. 거래소 주문 ID 반환
         """
         orders = []
+        exchange_clients = {}
 
-        for leg in opportunity.legs:
-            # Create order record
-            order = Order(
-                user_id=user_id,
-                opportunity_id=opportunity.id,
-                exchange=leg.exchange,
-                symbol=leg.symbol,
-                side=leg.side,
-                order_type="market",  # Default to market orders for arbitrage
-                quantity=leg.quantity,
-                price=leg.price,  # Reference price
-                status=OrderStatus.PENDING,
-                metadata={
-                    "venue_type": leg.venue_type,
-                    "opportunity_type": opportunity.type.value,
-                },
-            )
+        try:
+            # Create exchange clients for each required exchange
+            for exchange_name, credential in credentials.items():
+                try:
+                    client = ExchangeClientFactory.create_client(credential)
+                    exchange_clients[exchange_name] = client
+                except Exception as exc:
+                    logger.error(
+                        "Failed to create client for %s: %s / %s 클라이언트 생성 실패: %s",
+                        exchange_name,
+                        exc,
+                        exchange_name,
+                        exc,
+                    )
+                    raise
 
-            self.db.add(order)
-            await self.db.flush()  # Get order ID
+            # Submit orders for each leg
+            for leg in opportunity.legs:
+                # Create order record
+                order = Order(
+                    user_id=user_id,
+                    opportunity_id=opportunity.id,
+                    exchange=leg.exchange,
+                    symbol=leg.symbol,
+                    side=leg.side,
+                    order_type="market",  # Default to market orders for arbitrage
+                    quantity=leg.quantity,
+                    price=leg.price,  # Reference price
+                    status=OrderStatus.PENDING,
+                    metadata={
+                        "venue_type": leg.venue_type,
+                        "opportunity_type": opportunity.type.value,
+                    },
+                )
 
-            # TODO: IMPLEMENT ACTUAL EXCHANGE SUBMISSION HERE
-            # For now, mark as submitted
-            order.status = OrderStatus.SUBMITTED
-            order.submitted_at = datetime.utcnow()
-            order.exchange_order_id = f"STUB_{order.id}"  # Placeholder
+                self.db.add(order)
+                await self.db.flush()  # Get order ID
 
-            logger.info(
-                "Order %d submitted to %s: %s %s %s @ %s / 주문 %d이 %s에 제출됨: %s %s %s @ %s",
-                order.id,
-                leg.exchange,
-                leg.side,
-                leg.quantity,
-                leg.symbol,
-                leg.price,
-                order.id,
-                leg.exchange,
-                leg.side,
-                leg.quantity,
-                leg.symbol,
-                leg.price,
-            )
+                # Get exchange client
+                exchange_client = exchange_clients.get(leg.exchange)
+                if not exchange_client:
+                    logger.error(
+                        "No client found for exchange %s / 거래소 %s 클라이언트 없음",
+                        leg.exchange,
+                        leg.exchange,
+                    )
+                    order.status = OrderStatus.FAILED
+                    order.error_message = f"No client for exchange {leg.exchange}"
+                    continue
 
-            orders.append(order)
+                # Submit order to exchange
+                try:
+                    # Check if this is a perpetual futures order
+                    if leg.venue_type == "perp":
+                        # Get user's risk limits for leverage
+                        limits_result = await self.db.execute(
+                            select(RiskLimit).where(RiskLimit.user_id == user_id)
+                        )
+                        limits = limits_result.scalar_one_or_none()
+                        leverage = int(limits.max_leverage) if limits else 1
 
-        await self.db.commit()
-        return orders
+                        exchange_order = await ExchangeClientFactory.submit_perp_order(
+                            exchange=exchange_client,
+                            symbol=leg.symbol,
+                            side=leg.side,
+                            quantity=leg.quantity,
+                            leverage=leverage,
+                            order_type="market",
+                        )
+                    else:
+                        # Spot order
+                        exchange_order = await ExchangeClientFactory.submit_order(
+                            exchange=exchange_client,
+                            symbol=leg.symbol,
+                            side=leg.side,
+                            quantity=leg.quantity,
+                            order_type="market",
+                        )
+
+                    # Update order with exchange response
+                    order.status = OrderStatus.SUBMITTED
+                    order.submitted_at = datetime.utcnow()
+                    order.exchange_order_id = str(exchange_order.get("id"))
+                    order.metadata.update(
+                        {
+                            "exchange_response": {
+                                "status": exchange_order.get("status"),
+                                "timestamp": exchange_order.get("timestamp"),
+                                "info": exchange_order.get("info", {}),
+                            }
+                        }
+                    )
+
+                    logger.info(
+                        "Order %d submitted to %s: %s %s %s @ %s (exchange_order_id=%s) / "
+                        "주문 %d이 %s에 제출됨: %s %s %s @ %s (거래소주문ID=%s)",
+                        order.id,
+                        leg.exchange,
+                        leg.side,
+                        leg.quantity,
+                        leg.symbol,
+                        leg.price,
+                        order.exchange_order_id,
+                        order.id,
+                        leg.exchange,
+                        leg.side,
+                        leg.quantity,
+                        leg.symbol,
+                        leg.price,
+                        order.exchange_order_id,
+                    )
+
+                except ccxt.InsufficientFunds as exc:
+                    logger.error(
+                        "Insufficient funds for order %d on %s: %s / "
+                        "주문 %d에 대한 %s 잔액 부족: %s",
+                        order.id,
+                        leg.exchange,
+                        exc,
+                        order.id,
+                        leg.exchange,
+                        exc,
+                    )
+                    order.status = OrderStatus.REJECTED
+                    order.error_message = f"Insufficient funds: {exc}"
+
+                except ccxt.InvalidOrder as exc:
+                    logger.error(
+                        "Invalid order %d for %s: %s / 주문 %d (%s) 유효하지 않음: %s",
+                        order.id,
+                        leg.exchange,
+                        exc,
+                        order.id,
+                        leg.exchange,
+                        exc,
+                    )
+                    order.status = OrderStatus.REJECTED
+                    order.error_message = f"Invalid order: {exc}"
+
+                except ccxt.ExchangeError as exc:
+                    logger.error(
+                        "Exchange error for order %d on %s: %s / "
+                        "주문 %d (%s) 거래소 오류: %s",
+                        order.id,
+                        leg.exchange,
+                        exc,
+                        order.id,
+                        leg.exchange,
+                        exc,
+                    )
+                    order.status = OrderStatus.FAILED
+                    order.error_message = f"Exchange error: {exc}"
+
+                except Exception as exc:
+                    logger.exception(
+                        "Unexpected error submitting order %d to %s: %s / "
+                        "주문 %d (%s) 제출 중 예상치 못한 오류: %s",
+                        order.id,
+                        leg.exchange,
+                        exc,
+                        order.id,
+                        leg.exchange,
+                        exc,
+                    )
+                    order.status = OrderStatus.FAILED
+                    order.error_message = f"Unexpected error: {exc}"
+
+                orders.append(order)
+
+            await self.db.commit()
+            return orders
+
+        finally:
+            # Close all exchange clients
+            for exchange_name, client in exchange_clients.items():
+                try:
+                    ExchangeClientFactory.close_client(client)
+                except Exception as exc:
+                    logger.warning(
+                        "Error closing client for %s: %s / %s 클라이언트 종료 오류: %s",
+                        exchange_name,
+                        exc,
+                        exchange_name,
+                        exc,
+                    )
 
     async def _save_opportunity_history(
         self, opportunity: Opportunity, was_executed: bool

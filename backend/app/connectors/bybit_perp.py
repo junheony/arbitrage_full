@@ -57,16 +57,25 @@ class BybitPerpConnector(PerpConnector):
         return funding_rates
 
     async def fetch_perp_market_data(self) -> Sequence[PerpMarketData]:
-        """Fetch combined market data (quotes + funding + OI) / 통합 시장 데이터 조회."""
-        tasks = [self._fetch_perp_data(symbol) for symbol in self._symbols]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        """Fetch combined market data (quotes + funding + OI) with rate limiting / 레이트 리밋을 고려한 통합 시장 데이터 조회."""
         data: list[PerpMarketData] = []
-        for symbol, result in zip(self._symbols, results):
-            if isinstance(result, Exception):
-                logger.warning("Bybit perp data failed for %s: %s", symbol, result)
-                continue
-            if result:
-                data.append(result)
+        # Process in batches of 10 to avoid rate limiting / 레이트 리밋 회피를 위해 10개씩 배치 처리
+        batch_size = 10
+        for i in range(0, len(self._symbols), batch_size):
+            batch = self._symbols[i:i + batch_size]
+            tasks = [self._fetch_perp_data(symbol) for symbol in batch]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            for symbol, result in zip(batch, results):
+                if isinstance(result, Exception):
+                    # Skip logging for known unsupported symbols
+                    if "400" not in str(result):
+                        logger.warning("Bybit perp data failed for %s: %s", symbol, result)
+                    continue
+                if result:
+                    data.append(result)
+            # Small delay between batches to respect rate limits
+            if i + batch_size < len(self._symbols):
+                await asyncio.sleep(0.1)
         return data
 
     async def fetch_open_interest(self, symbol: str) -> float:

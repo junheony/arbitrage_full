@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import Enum
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Any, Literal, Optional
 
 
@@ -13,6 +13,8 @@ class OpportunityType(str, Enum):
 
 
 class MarketQuote(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     exchange: str
     venue_type: Literal["spot", "perp", "fx"]
     symbol: str
@@ -37,6 +39,8 @@ class OpportunityLeg(BaseModel):
 
 
 class Opportunity(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     type: OpportunityType
     symbol: str

@@ -5,7 +5,7 @@ import base64
 
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 from app.core.config import get_settings
 
@@ -15,7 +15,7 @@ settings = get_settings()
 def _get_fernet() -> Fernet:
     """Get Fernet cipher using app secret key / 앱 시크릿 키로 Fernet 암호화 객체 생성."""
     # Derive a key from the secret_key
-    kdf = PBKDF2(
+    kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
         length=32,
         salt=b"arbitrage_salt_change_in_prod",  # Should be unique per deployment

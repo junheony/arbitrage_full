@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,7 +23,7 @@ class UserCreate(BaseModel):
 
     email: EmailStr
     password: str
-    full_name: str | None = None
+    full_name: Optional[str] = None
 
 
 class UserLogin(BaseModel):
@@ -42,9 +43,11 @@ class Token(BaseModel):
 class UserResponse(BaseModel):
     """User info response / 사용자 정보 응답."""
 
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     email: str
-    full_name: str | None
+    full_name: Optional[str]
     is_active: bool
     is_superuser: bool
 

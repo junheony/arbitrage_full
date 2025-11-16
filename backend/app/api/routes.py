@@ -64,10 +64,10 @@ async def _serve_opportunities_ws(
     await websocket.accept()
     queue = engine.subscribe()
     try:
-        await websocket.send_json([opp.model_dump() for opp in engine.latest()])
+        await websocket.send_json([opp.model_dump(mode='json') for opp in engine.latest()])
         while True:
             opportunities = await queue.get()
-            await websocket.send_json([opp.model_dump() for opp in opportunities])
+            await websocket.send_json([opp.model_dump(mode='json') for opp in opportunities])
     except WebSocketDisconnect:
         pass
     finally:

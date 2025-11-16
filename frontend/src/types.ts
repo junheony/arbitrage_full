@@ -1,7 +1,8 @@
 export type OpportunityType =
   | "spot_cross"
   | "spot_vs_perp"
-  | "funding"
+  | "funding_arb"
+  | "perp_perp_spread"
   | "kimchi_premium";
 
 export interface OpportunityLeg {

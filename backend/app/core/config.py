@@ -32,8 +32,22 @@ class Settings(BaseSettings):
 
     # Market universe / 마켓 구성
     trading_symbols: list[str] = Field(
-        default_factory=lambda: ["BTC/USDT", "ETH/USDT", "XRP/USDT"],
-        description="Symbols to monitor across connectors.",
+        default_factory=lambda: [
+            # Top market cap coins tradeable on Binance, OKX, Upbit, Bithumb
+            "BTC/USDT", "ETH/USDT", "XRP/USDT", "SOL/USDT", "DOGE/USDT",
+            "ADA/USDT", "LINK/USDT", "AVAX/USDT", "DOT/USDT", "TRX/USDT",
+            "BCH/USDT", "NEAR/USDT", "SHIB/USDT", "UNI/USDT", "APT/USDT",
+            "HBAR/USDT", "FIL/USDT", "ARB/USDT", "ATOM/USDT", "ETC/USDT",
+            "XLM/USDT", "ALGO/USDT", "AAVE/USDT", "ENA/USDT", "PEPE/USDT",
+            "SUI/USDT", "ONDO/USDT", "WLD/USDT", "RENDER/USDT", "POL/USDT",
+            "BONK/USDT", "CHZ/USDT", "PENDLE/USDT", "SEI/USDT", "BLUR/USDT",
+            "FLOW/USDT", "ENS/USDT", "SAND/USDT", "MANA/USDT", "AXS/USDT",
+            "OP/USDT", "EGLD/USDT", "GRT/USDT", "ASTR/USDT", "PYTH/USDT",
+            "JUP/USDT", "ZRO/USDT", "W/USDT", "TIA/USDT", "ARKM/USDT",
+            "CELO/USDT", "GMT/USDT", "INJ/USDT", "THETA/USDT", "BIGTIME/USDT",
+            "MASK/USDT",
+        ],
+        description="Symbols to monitor across connectors (56 coins from top 100 market cap).",
     )
 
     # Public REST spot connectors / 퍼블릭 REST 현물 커넥터
@@ -54,15 +68,15 @@ class Settings(BaseSettings):
 
     # Perpetual futures connectors / 무기한 선물 커넥터
     enable_perp_connectors: bool = Field(
-        default=False,
+        default=True,
         description="Enable perpetual futures connectors for funding arbitrage.",
     )
     enable_binance_perp: bool = Field(
-        default=False,
+        default=True,
         description="Enable Binance perpetual futures connector.",
     )
     enable_bybit_perp: bool = Field(
-        default=False,
+        default=True,
         description="Enable Bybit perpetual futures connector.",
     )
     enable_hyperliquid_perp: bool = Field(
@@ -97,6 +111,10 @@ class Settings(BaseSettings):
             (3.0, 0.0),
         ],
         description="Piecewise linear curve mapping premium % to allocation fraction.",
+    )
+    min_kimchi_allocation_pct: float = Field(
+        5.0,
+        description="Minimum allocation % to show kimchi premium opportunity (filters noise).",
     )
 
     class Config:

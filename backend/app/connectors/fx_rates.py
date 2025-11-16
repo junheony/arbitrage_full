@@ -27,7 +27,7 @@ class KRWUSDForexConnector(MarketConnector):
             headers={"User-Agent": "ArbitrageCommand/0.1"},
         )
         self._fallback = httpx.AsyncClient(
-            base_url="https://api.exchangerate.host",
+            base_url="https://api.exchangerate-api.com",
             timeout=timeout,
             headers={"User-Agent": "ArbitrageCommand/0.1"},
         )
@@ -39,8 +39,18 @@ class KRWUSDForexConnector(MarketConnector):
         quote = await self._fetch_exchangerate_host()
         if quote:
             return [quote]
-        logger.warning("KRW/USD forex unavailable from all sources. / 모든 소스에서 환율을 가져오지 못했습니다.")
-        return []
+        # Fallback to fixed rate if both APIs fail
+        logger.warning("Using fixed USD/KRW rate (1400) / 고정 환율(1400원) 사용")
+        return [MarketQuote(
+            exchange="fixed_rate",
+            venue_type="fx",
+            symbol="USD/KRW",
+            base_asset="USD",
+            quote_currency="KRW",
+            bid=1400.0,
+            ask=1400.0,
+            timestamp=datetime.utcnow(),
+        )]
 
     async def close(self) -> None:
         await self._dunamu.aclose()
@@ -78,17 +88,15 @@ class KRWUSDForexConnector(MarketConnector):
 
     async def _fetch_exchangerate_host(self) -> Optional[MarketQuote]:
         try:
-            response = await self._fallback.get(
-                "/latest", params={"base": "USD", "symbols": "KRW"}
-            )
+            response = await self._fallback.get("/v4/latest/USD")
             response.raise_for_status()
             payload = response.json()
             rate = float(payload.get("rates", {}).get("KRW"))
-            if rate <= 0:
+            if not rate or rate <= 0:
                 return None
             now = datetime.utcnow()
             return MarketQuote(
-                exchange="exchangerate_host",
+                exchange="exchangerate_api",
                 venue_type="fx",
                 symbol="USD/KRW",
                 base_asset="USD",
