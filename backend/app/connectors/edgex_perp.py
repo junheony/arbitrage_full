@@ -83,8 +83,8 @@ class EdgeXPerpConnector(PerpConnector):
         """Fetch open interest in USD for a symbol / 심볼의 USD 기준 미결제약정 조회."""
         edgex_symbol = self._symbol_map.get(symbol, symbol)
         try:
-            # EdgeX API endpoint for open interest
-            response = await self._client.get(f"/api/v1/public/market/{edgex_symbol}/openInterest")
+            # EdgeX uses ticker endpoint which includes OI
+            response = await self._client.get(f"/api/public/ticker", params={"symbol": edgex_symbol})
             response.raise_for_status()
             data = response.json()
             oi = float(data.get("openInterest", 0))
@@ -102,7 +102,8 @@ class EdgeXPerpConnector(PerpConnector):
         edgex_symbol = self._symbol_map.get(symbol, f"{base}_{quote}")
 
         try:
-            response = await self._client.get(f"/api/v1/public/orderbook/{edgex_symbol}", params={"limit": 5})
+            # EdgeX uses /api/public/depth endpoint
+            response = await self._client.get(f"/api/public/depth", params={"symbol": edgex_symbol, "limit": 5})
             response.raise_for_status()
             data = response.json()
 
@@ -135,7 +136,8 @@ class EdgeXPerpConnector(PerpConnector):
         edgex_symbol = self._symbol_map.get(symbol, f"{base}_{quote}")
 
         try:
-            response = await self._client.get(f"/api/v1/public/market/{edgex_symbol}/funding")
+            # EdgeX uses /api/public/ticker endpoint for funding info
+            response = await self._client.get(f"/api/public/ticker", params={"symbol": edgex_symbol})
             response.raise_for_status()
             data = response.json()
 
@@ -173,32 +175,24 @@ class EdgeXPerpConnector(PerpConnector):
 
         try:
             # Fetch all data in parallel
-            book_task = self._client.get(f"/api/v1/public/orderbook/{edgex_symbol}", params={"limit": 5})
-            funding_task = self._client.get(f"/api/v1/public/market/{edgex_symbol}/funding")
-            oi_task = self._client.get(f"/api/v1/public/market/{edgex_symbol}/openInterest")
+            book_task = self._client.get(f"/api/public/depth", params={"symbol": edgex_symbol, "limit": 5})
+            ticker_task = self._client.get(f"/api/public/ticker", params={"symbol": edgex_symbol})
 
-            book_resp, funding_resp, oi_resp = await asyncio.gather(
-                book_task, funding_task, oi_task, return_exceptions=True
+            book_resp, ticker_resp = await asyncio.gather(
+                book_task, ticker_task, return_exceptions=True
             )
 
             # Handle exceptions
             if isinstance(book_resp, Exception):
                 raise book_resp
-            if isinstance(funding_resp, Exception):
-                raise funding_resp
-            if isinstance(oi_resp, Exception):
-                logger.warning("OI fetch failed for %s, using 0", symbol)
-                oi_usd = 0.0
-            else:
-                oi_resp.raise_for_status()
-                oi_data = oi_resp.json()
-                oi_usd = float(oi_data.get("openInterest", 0))
+            if isinstance(ticker_resp, Exception):
+                raise ticker_resp
 
             book_resp.raise_for_status()
-            funding_resp.raise_for_status()
+            ticker_resp.raise_for_status()
 
             book_data = book_resp.json()
-            funding_data = funding_resp.json()
+            ticker_data = ticker_resp.json()
 
             bids = book_data.get("bids", [])
             asks = book_data.get("asks", [])
@@ -207,9 +201,10 @@ class EdgeXPerpConnector(PerpConnector):
 
             best_bid = float(bids[0][0])
             best_ask = float(asks[0][0])
-            mark_price = float(funding_data.get("markPrice", 0))
-            funding_rate = float(funding_data.get("fundingRate", 0))
-            next_funding_ts = int(funding_data.get("nextFundingTime", 0))
+            mark_price = float(ticker_data.get("markPrice", 0))
+            funding_rate = float(ticker_data.get("fundingRate", 0))
+            next_funding_ts = int(ticker_data.get("nextFundingTime", 0))
+            oi_usd = float(ticker_data.get("openInterest", 0))
 
             # EdgeX uses 8H intervals
             funding_rate_8h = funding_rate

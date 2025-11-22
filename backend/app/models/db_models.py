@@ -213,3 +213,55 @@ class ExecutionLog(Base):
     timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     __table_args__ = (Index("idx_user_timestamp", "user_id", "timestamp"),)
+
+
+class PositionStatus(str, enum.Enum):
+    """Position status enum / 포지션 상태 열거형."""
+
+    OPEN = "open"
+    CLOSING = "closing"  # Exit orders submitted
+    CLOSED = "closed"  # Fully exited
+    FAILED = "failed"  # Failed to exit
+
+
+class Position(Base):
+    """Open position tracking for arbitrage strategies / 차익거래 전략의 오픈 포지션 추적."""
+
+    __tablename__ = "positions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    opportunity_id = Column(String(50), nullable=False)  # UUID from opportunity
+    position_type = Column(String(50), nullable=False)  # funding_arb, perp_perp_spread, etc.
+    symbol = Column(String(50), nullable=False)
+    status = Column(Enum(PositionStatus), default=PositionStatus.OPEN, nullable=False)
+
+    # Entry details
+    entry_time = Column(DateTime, default=datetime.utcnow, nullable=False)
+    entry_legs = Column(JSON, nullable=False)  # [{exchange, venue_type, side, price, quantity, order_id}, ...]
+    entry_notional = Column(Float, nullable=False)  # Total notional value in USD
+
+    # Exit targets
+    target_profit_pct = Column(Float, nullable=False)  # Target profit percentage
+    stop_loss_pct = Column(Float, nullable=False)  # Stop loss percentage
+
+    # Current state (updated by monitoring service)
+    current_pnl_pct = Column(Float, default=0.0)
+    current_pnl_usd = Column(Float, default=0.0)
+    last_update = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Exit details (populated when closed)
+    exit_time = Column(DateTime, nullable=True)
+    exit_legs = Column(JSON, nullable=True)  # [{exchange, venue_type, side, price, quantity, order_id}, ...]
+    realized_pnl_pct = Column(Float, nullable=True)
+    realized_pnl_usd = Column(Float, nullable=True)
+    exit_reason = Column(String(50), nullable=True)  # target_hit, stop_loss, manual, spread_converged
+
+    # Additional metadata
+    position_metadata = Column(JSON, nullable=True)  # Additional strategy-specific data
+
+    __table_args__ = (
+        Index("idx_user_status", "user_id", "status"),
+        Index("idx_opportunity", "opportunity_id"),
+        Index("idx_symbol_status", "symbol", "status"),
+    )

@@ -97,15 +97,18 @@ class OpportunityEngine:
         quotes = await self._gather_quotes()
         perp_data = await self._gather_perp_data()
 
-        # Disabled spot strategies - require asset ownership or margin/loan capability
-        # Spot 전략 비활성화 - 자산 보유 또는 대출/마진 기능 필요
-        # opportunities = self._generate_spot_cross(quotes)
-        # opportunities.extend(self._generate_kimchi_premium(quotes))
+        # Kimchi premium strategy - enabled for hot coin opportunities
+        # 김치프리미엄 전략 - 급등 코인 기회 포착용 활성화
+        opportunities = self._generate_kimchi_premium(quotes)
+
+        # Disabled other spot strategies - require asset ownership or margin/loan capability
+        # 기타 현물 전략 비활성화 - 자산 보유 또는 대출/마진 기능 필요
+        # opportunities.extend(self._generate_spot_cross(quotes))
         # opportunities.extend(self._generate_spot_perp_basis(quotes, perp_data))
 
         # Focus on perpetual futures strategies - executable with cash/margin only
         # 무기한 선물 전략에 집중 - 현금/마진만으로 실행 가능
-        opportunities = self._generate_funding_arb(perp_data)
+        opportunities.extend(self._generate_funding_arb(perp_data))
         opportunities.extend(self._generate_perp_perp_spread(perp_data))
 
         # Filter out opportunities with blocked deposits/withdrawals
@@ -389,7 +392,9 @@ class OpportunityEngine:
                     spread_cost_pct = total_spread_bps / 100  # Convert bps to percentage
                     expected_pnl_pct = funding_pnl_pct - spread_cost_pct
 
-                    if expected_pnl_pct <= 0:
+                    # Only consider if expected PnL exceeds minimum threshold after fees
+                    # 수수료 차감 후 최소 수익률 기준 충족하는 경우만
+                    if expected_pnl_pct <= (self._settings.min_profit_pct / 100):
                         continue
 
                     notional = self._settings.simulated_base_notional
@@ -571,7 +576,9 @@ class OpportunityEngine:
                     funding_diff = abs(perp1.funding_rate_8h - perp2.funding_rate_8h)
 
                     expected_pnl_pct = (spread_bps / 100) - 0.001  # Approximate fees for perp trading
-                    if expected_pnl_pct <= 0:
+                    # Only consider if expected PnL exceeds minimum threshold after fees
+                    # 수수료 차감 후 최소 수익률 기준 충족하는 경우만
+                    if expected_pnl_pct <= (self._settings.min_profit_pct / 100):
                         continue
 
                     notional = self._settings.simulated_base_notional
@@ -586,10 +593,10 @@ class OpportunityEngine:
                         notional=round(notional, 2),
                         timestamp=datetime.utcnow(),
                         description=(
-                            f"Perp spread: Buy {perp1.exchange} @{perp1.ask:.2f}, "
-                            f"Sell {perp2.exchange} @{perp2.bid:.2f} / "
-                            f"선물 스프레드: {perp1.exchange} 매수 @{perp1.ask:.2f}, "
-                            f"{perp2.exchange} 매도 @{perp2.bid:.2f}"
+                            f"Perp spread: Buy {perp1.exchange} @{self._format_price(perp1.ask)}, "
+                            f"Sell {perp2.exchange} @{self._format_price(perp2.bid)} / "
+                            f"선물 스프레드: {perp1.exchange} 매수 @{self._format_price(perp1.ask)}, "
+                            f"{perp2.exchange} 매도 @{self._format_price(perp2.bid)}"
                         ),
                         legs=[
                             OpportunityLeg(
@@ -765,3 +772,14 @@ class OpportunityEngine:
         if right.venue_type == "perp":
             fee_pct += 0.0005
         return fee_pct
+
+    def _format_price(self, price: float) -> str:
+        """Smart price formatting based on magnitude / 가격 크기에 따른 스마트 포맷팅."""
+        if price >= 1000:
+            return f"{price:.2f}"
+        elif price >= 1:
+            return f"{price:.5f}".rstrip('0').rstrip('.')
+        elif price >= 0.01:
+            return f"{price:.6f}".rstrip('0').rstrip('.')
+        else:
+            return f"{price:.8f}".rstrip('0').rstrip('.')

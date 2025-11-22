@@ -10,6 +10,7 @@ from app.api.auth_routes import router as auth_router
 from app.api.portfolio_routes import router as portfolio_router
 from app.api.execution_routes import router as execution_router
 from app.api.autotrading_routes import router as autotrading_router
+from app.api.positions_routes import router as positions_router
 from app.db.init_db import init_db
 from app.connectors.binance_spot import BinanceSpotConnector
 from app.connectors.bithumb_spot import BithumbSpotConnector
@@ -25,6 +26,7 @@ from app.connectors.edgex_perp import EdgeXPerpConnector
 from app.core.config import get_settings
 from app.services.opportunity_engine import OpportunityEngine
 from app.services.fill_monitor import start_fill_monitor, stop_fill_monitor
+# from app.services.position_monitor import start_position_monitor, stop_position_monitor  # TODO: Fix connector_factory dependency
 
 # Optional CCXT import / 선택적 CCXT 임포트
 try:
@@ -55,6 +57,7 @@ app.include_router(auth_router, prefix="/api/auth")
 app.include_router(portfolio_router, prefix="/api/portfolio")
 app.include_router(execution_router, prefix="/api/execution")
 app.include_router(autotrading_router, prefix="/api/autotrading")
+app.include_router(positions_router, prefix="/api/positions")
 
 
 @app.on_event("startup")
@@ -178,9 +181,17 @@ async def startup_event() -> None:
     await start_fill_monitor()
     logger.info("Fill monitor started. / 체결 모니터 시작됨.")
 
+    # TODO: Start position monitor for tracking PnL and auto-closing / 포지션 모니터 시작
+    # await start_position_monitor()
+    # logger.info("Position monitor started. / 포지션 모니터 시작됨.")
+
 
 @app.on_event("shutdown")
 async def shutdown_event() -> None:
+    # TODO: Stop position monitor / 포지션 모니터 중지
+    # await stop_position_monitor()
+    # logger.info("Position monitor stopped. / 포지션 모니터 중지됨.")
+
     # Stop fill monitor / 체결 모니터 중지
     await stop_fill_monitor()
     logger.info("Fill monitor stopped. / 체결 모니터 중지됨.")

@@ -15,6 +15,13 @@ class Settings(BaseSettings):
     # Data polling
     market_poll_interval: float = Field(3.0, description="Seconds between market snapshots.")
     max_spread_bps: float = Field(50.0, description="Ignore spreads wider than this (in bps).")
+    min_profit_pct: float = Field(0.1, description="Minimum net profit % after fees to show opportunity.")
+
+    # Position management / 포지션 관리
+    position_monitor_interval: float = Field(5.0, description="Seconds between position PnL updates.")
+    default_target_profit_pct: float = Field(0.5, description="Default target profit % for auto-close.")
+    default_stop_loss_pct: float = Field(1.0, description="Default stop loss % for auto-close.")
+    enable_auto_close: bool = Field(True, description="Enable automatic position closing on target/stop.")
 
     # Simulation defaults
     simulated_base_notional: float = 10000.0
@@ -80,15 +87,15 @@ class Settings(BaseSettings):
         description="Enable Bybit perpetual futures connector.",
     )
     enable_hyperliquid_perp: bool = Field(
-        default=False,
+        default=True,
         description="Enable Hyperliquid DEX perpetual connector (also powers based.one).",
     )
     enable_lighter_perp: bool = Field(
-        default=False,
+        default=True,
         description="Enable Lighter DEX perpetual connector.",
     )
     enable_edgex_perp: bool = Field(
-        default=False,
+        default=True,
         description="Enable EdgeX perpetual connector.",
     )
     min_open_interest_usd: float = Field(

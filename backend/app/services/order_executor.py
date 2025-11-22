@@ -16,11 +16,14 @@ from app.models.db_models import (
     Order,
     OrderStatus,
     OpportunityHistory,
+    Position,
+    PositionStatus,
     RiskLimit,
     User,
 )
 from app.models.opportunity import Opportunity
 from app.services.exchange_client import ExchangeClientFactory
+from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -473,6 +476,10 @@ class OrderExecutor:
 
                 orders.append(order)
 
+            # Create position record for perpetual strategies that need tracking
+            # 포지션 추적이 필요한 무기한 선물 전략에 대해 포지션 레코드 생성
+            await self._create_position_if_needed(user_id, opportunity, orders)
+
             await self.db.commit()
             return orders
 
@@ -509,6 +516,86 @@ class OrderExecutor:
         )
         self.db.add(history)
         await self.db.commit()
+
+    async def _create_position_if_needed(
+        self, user_id: int, opportunity: Opportunity, orders: list[Order]
+    ) -> None:
+        """
+        Create position record for strategies requiring position tracking.
+        포지션 추적이 필요한 전략에 대해 포지션 레코드 생성.
+
+        Only creates positions for:
+        - funding_arb (funding rate arbitrage)
+        - perp_perp_spread (perpetual-perpetual spread)
+        - spot_perp_basis (spot-perpetual basis trade)
+        """
+        # Only create positions for perpetual-based strategies
+        if opportunity.type.value not in ["funding_arb", "perp_perp_spread", "spot_perp_basis"]:
+            return
+
+        # Check if at least one order was successfully submitted
+        successful_orders = [o for o in orders if o.status == OrderStatus.SUBMITTED]
+        if not successful_orders:
+            logger.warning(
+                "No successful orders for opportunity %s, not creating position / "
+                "기회 %s에 성공한 주문 없음, 포지션 미생성",
+                opportunity.id,
+                opportunity.id,
+            )
+            return
+
+        # Get config settings
+        settings = get_settings()
+
+        # Build entry legs from orders
+        entry_legs = [
+            {
+                "exchange": order.exchange,
+                "venue_type": (order.order_metadata or {}).get("venue_type", "unknown"),
+                "side": order.side,
+                "price": order.price or 0.0,
+                "quantity": order.quantity,
+                "order_id": order.id,
+                "exchange_order_id": order.exchange_order_id,
+            }
+            for order in successful_orders
+        ]
+
+        # Create position record
+        position = Position(
+            user_id=user_id,
+            opportunity_id=opportunity.id,
+            position_type=opportunity.type.value,
+            symbol=opportunity.symbol,
+            status=PositionStatus.OPEN,
+            entry_time=datetime.utcnow(),
+            entry_legs=entry_legs,
+            entry_notional=opportunity.notional,
+            target_profit_pct=settings.default_target_profit_pct,
+            stop_loss_pct=settings.default_stop_loss_pct,
+            current_pnl_pct=0.0,
+            current_pnl_usd=0.0,
+            position_metadata={
+                "spread_bps": opportunity.spread_bps,
+                "expected_pnl_pct": opportunity.expected_pnl_pct,
+                "description": opportunity.description,
+            },
+        )
+
+        self.db.add(position)
+        logger.info(
+            "Created position %s for opportunity %s (type=%s, symbol=%s, notional=$%.2f) / "
+            "기회 %s에 대한 포지션 생성 (유형=%s, 심볼=%s, 명목금액=$%.2f)",
+            opportunity.id,
+            opportunity.id,
+            opportunity.type.value,
+            opportunity.symbol,
+            opportunity.notional,
+            opportunity.id,
+            opportunity.type.value,
+            opportunity.symbol,
+            opportunity.notional,
+        )
 
     async def _log_execution(
         self, user_id: int, opportunity_id: str, action: str, status: str, details: dict[str, Any]

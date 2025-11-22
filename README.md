@@ -214,6 +214,45 @@ VITE_API_WS_BASE=ws://localhost:8000/api/ws
 
 ---
 
+## ☁️ Cloudflare Pages 배포 / Cloudflare Pages Deployment
+
+### 김치프리미엄 기능 활성화 / Kimchi Premium Feature
+
+**Good news!** 김치프리미엄 기능이 활성화되었습니다! / Kimchi premium feature is now **ENABLED**!
+
+- ✅ Upbit, Bithumb (한국 거래소) vs Binance, OKX (해외 거래소) 가격 차이 추적
+- ✅ 실시간 USD/KRW 환율 적용
+- ✅ Tether Bot 곡선 기반 자동 자산 배분
+- ✅ 급등 코인 (FLUID, INTUITION 등) 기회 포착
+
+**어떻게 사용하나요?**
+1. `backend/.env.example`을 복사하여 `.env` 파일 생성
+2. `TRADING_SYMBOLS` 목록에 원하는 코인 추가 (예: `"FLUID/USDT"`, `"INTUI/USDT"`)
+3. Upbit/Bithumb에 상장된 코인만 김치프리미엄 기회가 표시됨
+4. 백엔드 재시작 후 프론트엔드에서 기회 확인
+
+### Quick Deploy to Cloudflare Pages / Cloudflare Pages 빠른 배포
+
+```bash
+# 프론트엔드 배포 (1분 안에 완료!)
+cd frontend
+./deploy-cloudflare.sh
+
+# 또는 수동 배포
+npm run build
+wrangler pages deploy dist --project-name=arbitrage-frontend
+```
+
+**백엔드 배포는?**
+Cloudflare Workers는 Python을 지원하지 않으므로, 다음 중 하나를 선택하세요:
+- **Railway** (추천): https://railway.app - 가장 간단, $20/월
+- **Render**: https://render.com - 무료 플랜 가능
+- **Fly.io**: https://fly.io - 무료 플랜 3개 VM
+
+자세한 배포 가이드: [CLOUDFLARE_DEPLOYMENT.md](./CLOUDFLARE_DEPLOYMENT.md)
+
+---
+
 ## ⚠️ Production Deployment Checklist / 프로덕션 배포 체크리스트
 
 Before going live / 라이브 전 확인사항:

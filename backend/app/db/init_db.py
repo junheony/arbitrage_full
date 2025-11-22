@@ -14,6 +14,8 @@ from app.models.db_models import (
     Fill,
     OpportunityHistory,
     Order,
+    Position,
+    PositionStatus,
     RiskLimit,
     User,
 )

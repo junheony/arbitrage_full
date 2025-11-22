@@ -112,6 +112,11 @@ class HyperliquidPerpConnector(PerpConnector):
             response.raise_for_status()
             data = response.json()
 
+            # Check if symbol exists
+            if not data or "levels" not in data:
+                logger.debug("Hyperliquid: Symbol %s (%s) not found or no data", symbol, hl_symbol)
+                return None
+
             levels = data.get("levels", [])
             if len(levels) < 2:
                 return None
@@ -137,7 +142,8 @@ class HyperliquidPerpConnector(PerpConnector):
                 timestamp=datetime.utcnow(),
             )
         except Exception as exc:
-            logger.warning("Hyperliquid depth error for %s: %s", symbol, exc)
+            # Only log at debug level for missing symbols to reduce noise
+            logger.debug("Hyperliquid depth error for %s (%s): %s", symbol, hl_symbol, exc)
             return None
 
     async def _fetch_funding_rate(self, symbol: str) -> FundingRate | None:

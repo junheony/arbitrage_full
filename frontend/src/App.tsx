@@ -2,9 +2,10 @@ import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import { useMemo, useState } from "react";
 import { useOpportunities } from "./hooks/useOpportunities";
+import { usePositions } from "./hooks/usePositions";
 import type { Opportunity, OpportunityMetadata } from "./types";
 import { isAuthenticated, clearToken } from "./auth";
-import { executeOpportunity } from "./api";
+import { executeOpportunity, closePosition } from "./api";
 import { LoginModal } from "./LoginModal";
 
 dayjs.extend(relativeTime);
@@ -15,12 +16,14 @@ type ViewMode = 'grid' | 'table';
 
 function App() {
   const { opportunities, isLoading, error, lastUpdated } = useOpportunities();
+  const { positions, stats } = usePositions();
   const [showLogin, setShowLogin] = useState(false);
   const [authenticated, setAuthenticated] = useState(isAuthenticated());
   const [sortField, setSortField] = useState<SortField>('expected_pnl_pct');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
+  const [showPositions, setShowPositions] = useState(false);
 
   const filteredAndSortedOpportunities = useMemo(() => {
     let filtered = opportunities;
@@ -95,6 +98,17 @@ function App() {
                   : "Awaiting data / 데이터 수신 중"}
               </div>
             </div>
+            {authenticated && stats && (
+              <div className="stat py-4 px-6">
+                <div className="stat-title text-xs">Open PnL / 미실현 손익</div>
+                <div className={`stat-value text-2xl ${stats.open_pnl_usd >= 0 ? 'text-success' : 'text-error'}`}>
+                  ${stats.open_pnl_usd.toFixed(2)}
+                </div>
+                <div className="stat-desc text-xs">
+                  {stats.open_positions} open / {stats.open_positions}개 포지션
+                </div>
+              </div>
+            )}
           </div>
           <div>
             {authenticated ? (
@@ -182,6 +196,99 @@ function App() {
         </div>
       </section>
 
+      {/* Open Positions Section */}
+      {authenticated && positions.length > 0 && (
+        <section className="mb-6 bg-base-200/80 rounded-xl p-6 border border-base-300">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold text-white">
+              📊 Open Positions / 오픈 포지션 ({positions.length})
+            </h2>
+            <button
+              onClick={() => setShowPositions(!showPositions)}
+              className="btn btn-sm btn-ghost"
+            >
+              {showPositions ? '▲ Hide / 숨기기' : '▼ Show / 보기'}
+            </button>
+          </div>
+
+          {showPositions && (
+            <div className="overflow-x-auto">
+              <table className="table table-zebra w-full">
+                <thead>
+                  <tr className="text-base-content/80">
+                    <th>Symbol / 심볼</th>
+                    <th>Type / 유형</th>
+                    <th>Entry / 진입</th>
+                    <th>PnL % / 손익률</th>
+                    <th>PnL $ / 손익</th>
+                    <th>Target / 목표</th>
+                    <th>Stop / 손절</th>
+                    <th>Legs / 레그</th>
+                    <th>Actions / 액션</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {positions.map((position) => (
+                    <tr key={position.id} className="hover">
+                      <td className="font-semibold">{position.symbol}</td>
+                      <td>
+                        <span className="badge badge-sm badge-outline">
+                          {position.position_type.replace('_', ' ')}
+                        </span>
+                      </td>
+                      <td className="text-xs">
+                        {dayjs(position.entry_time).format('MM/DD HH:mm')}
+                        <br />
+                        <span className="text-base-content/50">
+                          ${position.entry_notional.toLocaleString()}
+                        </span>
+                      </td>
+                      <td>
+                        <span className={`font-semibold ${position.current_pnl_pct >= 0 ? 'text-success' : 'text-error'}`}>
+                          {position.current_pnl_pct >= 0 ? '+' : ''}{position.current_pnl_pct.toFixed(2)}%
+                        </span>
+                      </td>
+                      <td>
+                        <span className={`font-semibold ${position.current_pnl_usd >= 0 ? 'text-success' : 'text-error'}`}>
+                          {position.current_pnl_usd >= 0 ? '+$' : '-$'}
+                          {Math.abs(position.current_pnl_usd).toFixed(2)}
+                        </span>
+                      </td>
+                      <td className="text-xs text-success">+{position.target_profit_pct}%</td>
+                      <td className="text-xs text-error">-{position.stop_loss_pct}%</td>
+                      <td className="text-xs">
+                        {position.entry_legs.map((leg, idx) => (
+                          <div key={idx} className="text-base-content/60">
+                            {leg.exchange} {leg.side}
+                          </div>
+                        ))}
+                      </td>
+                      <td>
+                        <button
+                          onClick={async () => {
+                            if (confirm(`Close position for ${position.symbol}? / ${position.symbol} 포지션을 청산하시겠습니까?`)) {
+                              try {
+                                await closePosition(position.id);
+                                alert('Position close request submitted / 포지션 청산 요청 제출됨');
+                              } catch (error) {
+                                alert(`Failed to close position: ${error} / 포지션 청산 실패`);
+                              }
+                            }
+                          }}
+                          className="btn btn-xs btn-error"
+                        >
+                          Close / 청산
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
+
       {/* Opportunities Display */}
       {isLoading && opportunities.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 bg-base-200/50 rounded-2xl border-2 border-dashed border-base-300">
@@ -255,9 +362,17 @@ function OpportunityRow({ opportunity }: OpportunityCardProps) {
       });
 
       setExecuteResult(`✅ ${result.message}`);
+
+      // Auto-clear result after 5 seconds
+      setTimeout(() => setExecuteResult(null), 5000);
     } catch (error) {
-      setExecuteResult(`❌ ${error instanceof Error ? error.message : 'Execution failed'}`);
+      const errorMessage = error instanceof Error ? error.message : 'Execution failed / 실행 실패';
+      setExecuteResult(`❌ ${errorMessage}`);
+
+      // Auto-clear error after 8 seconds
+      setTimeout(() => setExecuteResult(null), 8000);
     } finally {
+      // Always reset executing state
       setIsExecuting(false);
     }
   };
@@ -281,7 +396,7 @@ function OpportunityRow({ opportunity }: OpportunityCardProps) {
             </span>
             <span className="text-sm">{getExchangeLogo(leg.exchange)}</span>
             <span className="font-bold text-white">{getExchangeLabel(leg.exchange)}</span>
-            <span className="text-base-content/60">@{leg.price.toLocaleString()}</span>
+            <span className="text-base-content/60">@{formatPrice(leg.price)}</span>
           </div>
         ))}
       </td>
@@ -335,9 +450,17 @@ function OpportunityCard({ opportunity }: OpportunityCardProps) {
       });
 
       setExecuteResult(`✅ ${result.message}`);
+
+      // Auto-clear result after 5 seconds
+      setTimeout(() => setExecuteResult(null), 5000);
     } catch (error) {
-      setExecuteResult(`❌ ${error instanceof Error ? error.message : 'Execution failed'}`);
+      const errorMessage = error instanceof Error ? error.message : 'Execution failed / 실행 실패';
+      setExecuteResult(`❌ ${errorMessage}`);
+
+      // Auto-clear error after 8 seconds
+      setTimeout(() => setExecuteResult(null), 8000);
     } finally {
+      // Always reset executing state
       setIsExecuting(false);
     }
   };
@@ -432,7 +555,7 @@ function OpportunityCard({ opportunity }: OpportunityCardProps) {
                 <span className="text-base-content/50 text-[10px] whitespace-nowrap">{renderVenueLabel(leg.venue_type).split(' / ')[0]}</span>
               </div>
               <div className="font-mono text-right whitespace-nowrap shrink-0">
-                <span className="text-white font-semibold">{leg.price.toLocaleString()}</span>
+                <span className="text-white font-semibold">{formatPrice(leg.price)}</span>
               </div>
             </div>
           ))}
@@ -482,6 +605,19 @@ function OpportunityCard({ opportunity }: OpportunityCardProps) {
       </div>
     </article>
   );
+}
+
+function formatPrice(price: number): string {
+  // Smart price formatting based on magnitude
+  if (price >= 1000) {
+    return price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  } else if (price >= 1) {
+    return price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 5 });
+  } else if (price >= 0.01) {
+    return price.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 6 });
+  } else {
+    return price.toLocaleString(undefined, { minimumFractionDigits: 6, maximumFractionDigits: 8 });
+  }
 }
 
 function getSymbolEmoji(symbol: string): string {

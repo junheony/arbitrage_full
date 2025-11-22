@@ -25,7 +25,7 @@ class LighterPerpConnector(PerpConnector):
         self._symbols = list(symbols)
         timeout = get_settings().public_rest_timeout
         self._client = httpx.AsyncClient(
-            base_url="https://apidocs.lighter.xyz",  # API base URL
+            base_url="https://mainnet.zklighter.elliot.ai",  # Lighter mainnet API
             timeout=timeout * 2,
             headers={"Content-Type": "application/json"},
         )

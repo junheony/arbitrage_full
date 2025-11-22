@@ -59,8 +59,8 @@ class BinancePerpConnector(PerpConnector):
     async def fetch_perp_market_data(self) -> Sequence[PerpMarketData]:
         """Fetch combined market data (quotes + funding + OI) with rate limiting / 레이트 리밋을 고려한 통합 시장 데이터 조회."""
         data: list[PerpMarketData] = []
-        # Process in batches of 10 to avoid rate limiting / 레이트 리밋 회피를 위해 10개씩 배치 처리
-        batch_size = 10
+        # Process in batches of 5 to avoid rate limiting (Binance is strict) / 레이트 리밋 회피를 위해 5개씩 배치 처리 (바이낸스는 엄격함)
+        batch_size = 5
         for i in range(0, len(self._symbols), batch_size):
             batch = self._symbols[i:i + batch_size]
             tasks = [self._fetch_perp_data(symbol) for symbol in batch]
@@ -73,9 +73,9 @@ class BinancePerpConnector(PerpConnector):
                     continue
                 if result:
                     data.append(result)
-            # Small delay between batches to respect rate limits
+            # Longer delay between batches to avoid 418/429 errors
             if i + batch_size < len(self._symbols):
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(0.2)
         return data
 
     async def fetch_open_interest(self, symbol: str) -> float:
