@@ -3,7 +3,7 @@ import relativeTime from "dayjs/plugin/relativeTime";
 import { useMemo, useState, useEffect } from "react";
 import { useOpportunities } from "./hooks/useOpportunities";
 import { usePositions } from "./hooks/usePositions";
-import type { Opportunity, OpportunityMetadata } from "./types";
+import type { Opportunity } from "./types";
 import { isAuthenticated, clearToken } from "./auth";
 import { executeOpportunity, closePosition } from "./api";
 import { LoginModal } from "./LoginModal";
@@ -72,7 +72,7 @@ function App() {
 
     // Get avg from metadata (all opportunities should have same avg)
     const firstOpp = kimchiOpps[0];
-    return firstOpp.metadata?.avg_premium_pct ?? null;
+    return firstOpp.metadata?.premium_pct ?? null;
   }, [opportunities]);
 
   const handleLogout = () => {
@@ -567,7 +567,7 @@ function getTypeShort(type: Opportunity["type"]): string {
     case "kimchi_premium":
       return "KIMCHI";
     default:
-      return type.toUpperCase();
+      return (type as string).toUpperCase();
   }
 }
 

@@ -33,4 +33,6 @@ export interface OpportunityMetadata {
   target_allocation_pct?: number;
   recommended_notional?: number;
   recommended_action?: "buy_krw" | "sell_krw";
+  funding_rate_8h_pct?: number;
+  funding_rate_24h_pct?: number;
 }
