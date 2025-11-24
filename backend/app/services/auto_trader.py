@@ -45,7 +45,7 @@ class ConservativeStrategy(AutoTradingStrategy):
         self,
         min_spread_bps: float = 50.0,
         min_expected_pnl_pct: float = 0.5,
-        max_notional: float = 1000.0,
+        min_notional: float = 100.0,
     ):
         """
         Initialize conservative strategy.
@@ -53,18 +53,18 @@ class ConservativeStrategy(AutoTradingStrategy):
         Args:
             min_spread_bps: Minimum spread in basis points
             min_expected_pnl_pct: Minimum expected PnL percentage
-            max_notional: Maximum notional per trade
+            min_notional: Minimum notional (too small trades filtered out)
         """
         self.min_spread_bps = min_spread_bps
         self.min_expected_pnl_pct = min_expected_pnl_pct
-        self.max_notional = max_notional
+        self.min_notional = min_notional
 
     def should_execute(self, opportunity: Opportunity) -> bool:
         """Check if opportunity meets conservative criteria / 보수적 기준 충족 여부 확인."""
         return (
             opportunity.spread_bps >= self.min_spread_bps
             and opportunity.expected_pnl_pct >= self.min_expected_pnl_pct
-            and opportunity.notional <= self.max_notional
+            and opportunity.notional >= self.min_notional
         )
 
 
@@ -78,7 +78,7 @@ class AggressiveStrategy(AutoTradingStrategy):
         self,
         min_spread_bps: float = 20.0,
         min_expected_pnl_pct: float = 0.2,
-        max_notional: float = 5000.0,
+        min_notional: float = 50.0,
     ):
         """
         Initialize aggressive strategy.
@@ -86,18 +86,18 @@ class AggressiveStrategy(AutoTradingStrategy):
         Args:
             min_spread_bps: Minimum spread in basis points
             min_expected_pnl_pct: Minimum expected PnL percentage
-            max_notional: Maximum notional per trade
+            min_notional: Minimum notional (too small trades filtered out)
         """
         self.min_spread_bps = min_spread_bps
         self.min_expected_pnl_pct = min_expected_pnl_pct
-        self.max_notional = max_notional
+        self.min_notional = min_notional
 
     def should_execute(self, opportunity: Opportunity) -> bool:
         """Check if opportunity meets aggressive criteria / 공격적 기준 충족 여부 확인."""
         return (
             opportunity.spread_bps >= self.min_spread_bps
             and opportunity.expected_pnl_pct >= self.min_expected_pnl_pct
-            and opportunity.notional <= self.max_notional
+            and opportunity.notional >= self.min_notional
         )
 
 
@@ -110,17 +110,17 @@ class FundingRateStrategy(AutoTradingStrategy):
     def __init__(
         self,
         min_funding_rate_apr: float = 10.0,  # 10% APR
-        max_notional: float = 10000.0,
+        min_notional: float = 100.0,
     ):
         """
         Initialize funding rate strategy.
 
         Args:
             min_funding_rate_apr: Minimum funding rate APR %
-            max_notional: Maximum notional per trade
+            min_notional: Minimum notional (too small trades filtered out)
         """
         self.min_funding_rate_apr = min_funding_rate_apr
-        self.max_notional = max_notional
+        self.min_notional = min_notional
 
     def should_execute(self, opportunity: Opportunity) -> bool:
         """Check if opportunity is funding arbitrage with good rate / 좋은 펀딩 비율 확인."""
@@ -131,7 +131,7 @@ class FundingRateStrategy(AutoTradingStrategy):
         funding_rate_apr = opportunity.metadata.get("funding_rate_apr", 0)
         return (
             funding_rate_apr >= self.min_funding_rate_apr
-            and opportunity.notional <= self.max_notional
+            and opportunity.notional >= self.min_notional
         )
 
 

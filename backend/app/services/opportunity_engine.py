@@ -99,7 +99,7 @@ class OpportunityEngine:
 
         # Kimchi premium strategy - enabled for hot coin opportunities
         # 김치프리미엄 전략 - 급등 코인 기회 포착용 활성화
-        opportunities = self._generate_kimchi_premium(quotes)
+        opportunities = self._generate_kimchi_premium(quotes, perp_data)
 
         # Disabled other spot strategies - require asset ownership or margin/loan capability
         # 기타 현물 전략 비활성화 - 자산 보유 또는 대출/마진 기능 필요
@@ -225,24 +225,52 @@ class OpportunityEngine:
                 opportunities.append(opportunity)
         return sorted(opportunities, key=lambda opp: opp.expected_pnl_pct, reverse=True)
 
-    def _generate_kimchi_premium(self, quotes: Sequence[MarketQuote]) -> list[Opportunity]:
+    def _generate_kimchi_premium(self, quotes: Sequence[MarketQuote], perp_data: Sequence[PerpMarketData]) -> list[Opportunity]:
         fx_quotes = [q for q in quotes if q.base_asset == "USD" and q.quote_currency == "KRW"]
         if not fx_quotes:
             return []
         fx_mid = sum(q.mid_price for q in fx_quotes) / len(fx_quotes)
         if fx_mid <= 0:
             return []
-        # Filter spot quotes only for kimchi premium calculation
-        spot_quotes = [q for q in quotes if q.venue_type == "spot"]
+
+        # Build funding rate lookup for perp quotes
+        # 무기한 선물 펀딩비 조회 테이블 구축
+        funding_lookup: dict[tuple[str, str], PerpMarketData] = {}
+        for perp in perp_data:
+            key = (perp.exchange.lower(), perp.base_asset.upper())
+            funding_lookup[key] = perp
+
+        # Accept both spot and perp quotes for international side (to handle new listings)
+        # Korean side must be spot only
+        # 국제 거래소는 현물/선물 모두 허용 (신규 상장 대응), 한국 거래소는 현물만
+        tradeable_quotes = [q for q in quotes if q.venue_type in {"spot", "perp"}]
 
         global_quotes: dict[str, list[MarketQuote]] = defaultdict(list)
         krw_quotes: dict[str, list[MarketQuote]] = defaultdict(list)
-        for quote in spot_quotes:
+        for quote in tradeable_quotes:
             if quote.quote_currency in {"USDT", "USD"}:
                 global_quotes[quote.base_asset].append(quote)
             elif quote.quote_currency == "KRW":
-                krw_quotes[quote.base_asset].append(quote)
+                # Korean exchanges must be spot only
+                if quote.venue_type == "spot":
+                    krw_quotes[quote.base_asset].append(quote)
 
+        # First pass: calculate all premiums to get average
+        all_premiums: list[float] = []
+        for asset, krw_list in krw_quotes.items():
+            if asset not in global_quotes:
+                continue
+            krw_quote = min(krw_list, key=lambda q: q.ask)
+            for global_quote in global_quotes[asset]:
+                global_mid = global_quote.mid_price
+                krw_mid_usd = krw_quote.mid_price / fx_mid
+                premium_pct = (krw_mid_usd - global_mid) / global_mid * 100
+                all_premiums.append(premium_pct)
+
+        # Calculate average premium
+        avg_premium = sum(all_premiums) / len(all_premiums) if all_premiums else 0.0
+
+        # Second pass: filter by deviation from average
         opportunities: list[Opportunity] = []
         for asset, krw_list in krw_quotes.items():
             if asset not in global_quotes:
@@ -257,6 +285,12 @@ class OpportunityEngine:
                 quantity = notional / global_mid if global_mid else 0
                 if quantity <= 0:
                     continue
+
+                # Check deviation from average
+                deviation = abs((premium_pct * 100) - avg_premium)
+                if deviation < self._settings.kimchi_deviation_threshold_pct:
+                    continue
+
                 allocation_fraction = self._evaluate_allocation(premium_pct * 100)
                 allocation_pct = allocation_fraction * 100
 
@@ -273,27 +307,62 @@ class OpportunityEngine:
                     quantity=quantity,
                     premium_pct=premium_pct,
                 )
+                # Add venue type labels to clarify spot vs perp
+                krw_venue_label = f"({krw_quote.venue_type})"
+                global_venue_label = f"({global_quote.venue_type})"
+
+                # Use different description based on whether it's pure spot or mixed
+                if krw_quote.venue_type == "spot" and global_quote.venue_type == "spot":
+                    strategy_name = "Kimchi premium"
+                    strategy_name_kr = "김치프리미엄"
+                else:
+                    strategy_name = "Price diff"
+                    strategy_name_kr = "가격차"
+
+                # Look up funding rate if global side is perp
+                # 국제 거래소 측이 선물이면 펀딩비 조회
+                funding_rate_8h = None
+                funding_rate_24h = None
+                if global_quote.venue_type == "perp":
+                    perp_key = (global_quote.exchange.lower(), asset.upper())
+                    if perp_key in funding_lookup:
+                        perp_info = funding_lookup[perp_key]
+                        funding_rate_8h = perp_info.funding_rate_8h
+                        # Calculate 24H funding (3 fundings per day)
+                        funding_rate_24h = funding_rate_8h * 3
+
                 description = (
-                    f"Kimchi premium {premium_pct*100:.2f}% via {krw_quote.exchange}/{global_quote.exchange} "
-                    f"/ {krw_quote.exchange}와 {global_quote.exchange} 간 김프 {premium_pct*100:.2f}%"
+                    f"{strategy_name} {premium_pct*100:.2f}% (avg {avg_premium:.2f}%) - "
+                    f"{krw_quote.exchange}{krw_venue_label} vs {global_quote.exchange}{global_venue_label} / "
+                    f"{krw_quote.exchange}{krw_venue_label}와 {global_quote.exchange}{global_venue_label} 간 {strategy_name_kr} {premium_pct*100:.2f}% (평균 {avg_premium:.2f}%)"
                 )
+
+                metadata = {
+                    "premium_pct": round(premium_pct * 100, 3),
+                    "avg_premium_pct": round(avg_premium, 3),
+                    "deviation_from_avg": round(deviation, 3),
+                    "fx_rate": round(fx_mid, 4),
+                    "target_allocation_pct": round(allocation_fraction * 100, 2),
+                    "recommended_notional": round(recommended_notional, 2),
+                    "recommended_action": recommended_action,
+                }
+                # Add funding rate info if available
+                if funding_rate_8h is not None:
+                    metadata["funding_rate_8h_pct"] = round(funding_rate_8h * 100, 4)
+                if funding_rate_24h is not None:
+                    metadata["funding_rate_24h_pct"] = round(funding_rate_24h * 100, 4)
+
                 opportunity = Opportunity(
                     id=str(uuid.uuid4()),
                     type=OpportunityType.KIMCHI_PREMIUM,
-                    symbol=f"{asset}/KRW vs {asset}/{global_quote.quote_currency}",
+                    symbol=f"{asset}/KRW{krw_venue_label} vs {asset}/{global_quote.quote_currency}{global_venue_label}",
                     spread_bps=round(spread_bps, 3),
                     expected_pnl_pct=round(premium_pct * 100, 3),
                     notional=round(notional, 2),
                     timestamp=datetime.utcnow(),
                     description=description,
                     legs=legs,
-                    metadata={
-                        "premium_pct": round(premium_pct * 100, 3),
-                        "fx_rate": round(fx_mid, 4),
-                        "target_allocation_pct": round(allocation_fraction * 100, 2),
-                        "recommended_notional": round(recommended_notional, 2),
-                        "recommended_action": recommended_action,
-                    },
+                    metadata=metadata,
                 )
                 opportunities.append(opportunity)
         return sorted(opportunities, key=lambda opp: abs(opp.expected_pnl_pct), reverse=True)

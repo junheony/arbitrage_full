@@ -63,7 +63,7 @@ class OrderExecutor:
 
         try:
             # Step 1: Risk checks / 리스크 체크
-            await self._perform_risk_checks(user_id, opportunity)
+            scale = await self._perform_risk_checks(user_id, opportunity)
 
             # Step 2: Verify exchange credentials / 거래소 인증 정보 확인
             credentials = await self._get_credentials(user_id, opportunity)
@@ -73,17 +73,23 @@ class OrderExecutor:
 
             if dry_run:
                 await self._log_execution(
-                    user_id, opportunity.id, "execute_dry_run", "success", {"dry_run": True}
+                    user_id, opportunity.id, "execute_dry_run", "success", {
+                        "dry_run": True,
+                        "scale": scale,
+                        "scaled_notional": opportunity.notional * scale,
+                    }
                 )
                 return {
                     "status": "dry_run",
                     "opportunity_id": opportunity.id,
-                    "message": "Dry run successful - no actual orders placed / 시뮬레이션 성공 - 실제 주문 미실행",
+                    "message": f"Dry run successful (scale={scale:.3f}) / 시뮬레이션 성공 (비율={scale:.3f})",
+                    "scale": scale,
+                    "scaled_notional": opportunity.notional * scale,
                     "orders": [],
                 }
 
             # Step 4: Submit orders to exchanges / 거래소에 주문 제출
-            orders = await self._submit_orders(user_id, opportunity, credentials)
+            orders = await self._submit_orders(user_id, opportunity, credentials, scale)
 
             # Step 5: Monitor fills (async task in production) / 체결 모니터링
             # TODO: Launch background task for fill monitoring
@@ -136,10 +142,13 @@ class OrderExecutor:
                 "orders": [],
             }
 
-    async def _perform_risk_checks(self, user_id: int, opportunity: Opportunity) -> None:
+    async def _perform_risk_checks(self, user_id: int, opportunity: Opportunity) -> float:
         """
         Perform risk limit checks before execution.
         실행 전 리스크 한도 체크.
+
+        Returns:
+            scale: Scale factor to apply to notional (1.0 = no scaling, 0.5 = half size, etc.)
         """
         # Get user's risk limits
         result = await self.db.execute(select(RiskLimit).where(RiskLimit.user_id == user_id))
@@ -148,11 +157,20 @@ class OrderExecutor:
         if not limits:
             raise RiskCheckFailed("No risk limits configured / 리스크 한도 미설정")
 
-        # Check max position size
+        # Calculate scale factor based on max position size
+        # If opportunity is larger than limit, scale it down
+        scale = 1.0
         if opportunity.notional > limits.max_position_size_usd:
-            raise RiskCheckFailed(
-                f"Position size ${opportunity.notional} exceeds limit ${limits.max_position_size_usd} / "
-                f"포지션 크기 ${opportunity.notional}이 한도 ${limits.max_position_size_usd}을 초과"
+            scale = limits.max_position_size_usd / opportunity.notional
+            logger.info(
+                "Scaling down opportunity from $%.2f to $%.2f (scale=%.3f) / "
+                "기회 크기 축소: $%.2f → $%.2f (비율=%.3f)",
+                opportunity.notional,
+                opportunity.notional * scale,
+                scale,
+                opportunity.notional,
+                opportunity.notional * scale,
+                scale,
             )
 
         # Check max open orders
@@ -174,12 +192,25 @@ class OrderExecutor:
 
         # Check leverage for perpetual futures
         if any(leg.venue_type == "perp" for leg in opportunity.legs):
-            if opportunity.notional * limits.max_leverage > limits.max_position_size_usd:
-                raise RiskCheckFailed(
-                    f"Leveraged position size exceeds limit / 레버리지 포지션 크기가 한도 초과"
+            effective_notional = opportunity.notional * scale * limits.max_leverage
+            if effective_notional > limits.max_position_size_usd:
+                # Further scale down for leveraged positions
+                scale = limits.max_position_size_usd / (opportunity.notional * limits.max_leverage)
+                logger.info(
+                    "Further scaling down for leverage (new scale=%.3f) / "
+                    "레버리지 고려 추가 축소 (새 비율=%.3f)",
+                    scale,
+                    scale,
                 )
 
-        logger.info("Risk checks passed for user %d / 사용자 %d 리스크 체크 통과", user_id, user_id)
+        logger.info(
+            "Risk checks passed for user %d (final scale=%.3f) / 사용자 %d 리스크 체크 통과 (최종 비율=%.3f)",
+            user_id,
+            scale,
+            user_id,
+            scale,
+        )
+        return scale
 
     async def _check_daily_loss_limit(self, user_id: int, limits: RiskLimit) -> None:
         """
@@ -285,6 +316,7 @@ class OrderExecutor:
         user_id: int,
         opportunity: Opportunity,
         credentials: dict[str, ExchangeCredential],
+        scale: float = 1.0,
     ) -> list[Order]:
         """
         Submit orders to exchanges.
@@ -325,6 +357,9 @@ class OrderExecutor:
 
             # Submit orders for each leg
             for leg in opportunity.legs:
+                # Apply scale to quantity
+                scaled_quantity = leg.quantity * scale
+
                 # Create order record
                 order = Order(
                     user_id=user_id,
@@ -333,12 +368,14 @@ class OrderExecutor:
                     symbol=leg.symbol,
                     side=leg.side,
                     order_type="market",  # Default to market orders for arbitrage
-                    quantity=leg.quantity,
+                    quantity=scaled_quantity,
                     price=leg.price,  # Reference price
                     status=OrderStatus.PENDING,
-                    metadata={
+                    order_metadata={
                         "venue_type": leg.venue_type,
                         "opportunity_type": opportunity.type.value,
+                        "scale": scale,
+                        "original_quantity": leg.quantity,
                     },
                 )
 
@@ -372,7 +409,7 @@ class OrderExecutor:
                             exchange=exchange_client,
                             symbol=leg.symbol,
                             side=leg.side,
-                            quantity=leg.quantity,
+                            quantity=scaled_quantity,
                             leverage=leverage,
                             order_type="market",
                         )
@@ -382,7 +419,7 @@ class OrderExecutor:
                             exchange=exchange_client,
                             symbol=leg.symbol,
                             side=leg.side,
-                            quantity=leg.quantity,
+                            quantity=scaled_quantity,
                             order_type="market",
                         )
 
@@ -390,7 +427,9 @@ class OrderExecutor:
                     order.status = OrderStatus.SUBMITTED
                     order.submitted_at = datetime.utcnow()
                     order.exchange_order_id = str(exchange_order.get("id"))
-                    order.metadata.update(
+                    if order.order_metadata is None:
+                        order.order_metadata = {}
+                    order.order_metadata.update(
                         {
                             "exchange_response": {
                                 "status": exchange_order.get("status"),
@@ -401,21 +440,23 @@ class OrderExecutor:
                     )
 
                     logger.info(
-                        "Order %d submitted to %s: %s %s %s @ %s (exchange_order_id=%s) / "
-                        "주문 %d이 %s에 제출됨: %s %s %s @ %s (거래소주문ID=%s)",
+                        "Order %d submitted to %s: %s %s %s @ %s (scaled qty=%.6f, exchange_order_id=%s) / "
+                        "주문 %d이 %s에 제출됨: %s %s %s @ %s (조정수량=%.6f, 거래소주문ID=%s)",
                         order.id,
                         leg.exchange,
                         leg.side,
-                        leg.quantity,
+                        scaled_quantity,
                         leg.symbol,
                         leg.price,
+                        scaled_quantity,
                         order.exchange_order_id,
                         order.id,
                         leg.exchange,
                         leg.side,
-                        leg.quantity,
+                        scaled_quantity,
                         leg.symbol,
                         leg.price,
+                        scaled_quantity,
                         order.exchange_order_id,
                     )
 
@@ -478,7 +519,7 @@ class OrderExecutor:
 
             # Create position record for perpetual strategies that need tracking
             # 포지션 추적이 필요한 무기한 선물 전략에 대해 포지션 레코드 생성
-            await self._create_position_if_needed(user_id, opportunity, orders)
+            await self._create_position_if_needed(user_id, opportunity, orders, scale)
 
             await self.db.commit()
             return orders
@@ -510,7 +551,7 @@ class OrderExecutor:
             notional=opportunity.notional,
             description=opportunity.description,
             legs=[leg.model_dump() for leg in opportunity.legs],
-            metadata=opportunity.metadata,
+            opportunity_metadata=opportunity.metadata,
             was_executed=was_executed,
             timestamp=opportunity.timestamp,
         )
@@ -518,7 +559,7 @@ class OrderExecutor:
         await self.db.commit()
 
     async def _create_position_if_needed(
-        self, user_id: int, opportunity: Opportunity, orders: list[Order]
+        self, user_id: int, opportunity: Opportunity, orders: list[Order], scale: float = 1.0
     ) -> None:
         """
         Create position record for strategies requiring position tracking.
@@ -562,6 +603,7 @@ class OrderExecutor:
         ]
 
         # Create position record
+        scaled_notional = opportunity.notional * scale
         position = Position(
             user_id=user_id,
             opportunity_id=opportunity.id,
@@ -570,7 +612,7 @@ class OrderExecutor:
             status=PositionStatus.OPEN,
             entry_time=datetime.utcnow(),
             entry_legs=entry_legs,
-            entry_notional=opportunity.notional,
+            entry_notional=scaled_notional,
             target_profit_pct=settings.default_target_profit_pct,
             stop_loss_pct=settings.default_stop_loss_pct,
             current_pnl_pct=0.0,
@@ -579,22 +621,26 @@ class OrderExecutor:
                 "spread_bps": opportunity.spread_bps,
                 "expected_pnl_pct": opportunity.expected_pnl_pct,
                 "description": opportunity.description,
+                "scale": scale,
+                "original_notional": opportunity.notional,
             },
         )
 
         self.db.add(position)
         logger.info(
-            "Created position %s for opportunity %s (type=%s, symbol=%s, notional=$%.2f) / "
-            "기회 %s에 대한 포지션 생성 (유형=%s, 심볼=%s, 명목금액=$%.2f)",
+            "Created position %s for opportunity %s (type=%s, symbol=%s, scaled_notional=$%.2f, scale=%.3f) / "
+            "기회 %s에 대한 포지션 생성 (유형=%s, 심볼=%s, 조정명목금액=$%.2f, 비율=%.3f)",
             opportunity.id,
             opportunity.id,
             opportunity.type.value,
             opportunity.symbol,
-            opportunity.notional,
+            scaled_notional,
+            scale,
             opportunity.id,
             opportunity.type.value,
             opportunity.symbol,
-            opportunity.notional,
+            scaled_notional,
+            scale,
         )
 
     async def _log_execution(

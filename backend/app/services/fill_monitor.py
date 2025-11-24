@@ -281,7 +281,9 @@ class FillMonitor:
                 )
 
             # Update order metadata with latest exchange info
-            order.metadata.update(
+            if order.order_metadata is None:
+                order.order_metadata = {}
+            order.order_metadata.update(
                 {
                     "last_checked": datetime.utcnow().isoformat(),
                     "exchange_status": status,

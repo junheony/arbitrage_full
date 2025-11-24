@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { getPositions, getPositionStats, Position, PositionStatsResponse } from '../api';
+import { getPositions, getPositionStats } from '../api';
+import type { Position, PositionStatsResponse } from '../api';
 import { isAuthenticated } from '../auth';
 
 export function usePositions() {

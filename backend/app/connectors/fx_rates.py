@@ -31,6 +31,11 @@ class KRWUSDForexConnector(MarketConnector):
             timeout=timeout,
             headers={"User-Agent": "ArbitrageCommand/0.1"},
         )
+        self._upbit = httpx.AsyncClient(
+            base_url="https://api.upbit.com",
+            timeout=timeout,
+            headers={"User-Agent": "ArbitrageCommand/0.1"},
+        )
 
     async def fetch_quotes(self) -> Sequence[MarketQuote]:
         quote = await self._fetch_dunamu()
@@ -39,7 +44,11 @@ class KRWUSDForexConnector(MarketConnector):
         quote = await self._fetch_exchangerate_host()
         if quote:
             return [quote]
-        # Fallback to fixed rate if both APIs fail
+        # Try Upbit USDT/KRW as fallback / 업비트 USDT/KRW를 폴백으로 사용
+        quote = await self._fetch_upbit_usdt_krw()
+        if quote:
+            return [quote]
+        # Fallback to fixed rate if all APIs fail
         logger.warning("Using fixed USD/KRW rate (1400) / 고정 환율(1400원) 사용")
         return [MarketQuote(
             exchange="fixed_rate",
@@ -55,6 +64,7 @@ class KRWUSDForexConnector(MarketConnector):
     async def close(self) -> None:
         await self._dunamu.aclose()
         await self._fallback.aclose()
+        await self._upbit.aclose()
 
     async def _fetch_dunamu(self) -> Optional[MarketQuote]:
         try:
@@ -108,6 +118,45 @@ class KRWUSDForexConnector(MarketConnector):
         except Exception as exc:  # pylint: disable=broad-except
             logger.warning(
                 "Fallback forex fetch failed: %s / 대체 환율 조회 실패: %s",
+                exc,
+                exc,
+            )
+            return None
+
+    async def _fetch_upbit_usdt_krw(self) -> Optional[MarketQuote]:
+        """
+        Fetch USDT/KRW rate from Upbit as fallback.
+        업비트 USDT/KRW 환율을 폴백으로 사용.
+        """
+        try:
+            response = await self._upbit.get("/v1/orderbook", params={"markets": "KRW-USDT"})
+            response.raise_for_status()
+            payload = response.json()
+            if not payload:
+                return None
+            orderbook = payload[0]["orderbook_units"][0]
+            bid = float(orderbook["bid_price"])
+            ask = float(orderbook["ask_price"])
+            mid = (bid + ask) / 2.0
+            now = datetime.utcnow()
+            logger.info(
+                "Using Upbit USDT/KRW as forex rate: %.2f / 업비트 USDT/KRW 환율 사용: %.2f",
+                mid,
+                mid,
+            )
+            return MarketQuote(
+                exchange="upbit_usdt",
+                venue_type="fx",
+                symbol="USD/KRW",
+                base_asset="USD",
+                quote_currency="KRW",
+                bid=mid,
+                ask=mid,
+                timestamp=now,
+            )
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.warning(
+                "Upbit USDT/KRW forex fetch failed: %s / 업비트 USDT/KRW 환율 조회 실패: %s",
                 exc,
                 exc,
             )

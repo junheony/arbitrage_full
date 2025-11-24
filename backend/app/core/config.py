@@ -120,8 +120,12 @@ class Settings(BaseSettings):
         description="Piecewise linear curve mapping premium % to allocation fraction.",
     )
     min_kimchi_allocation_pct: float = Field(
-        5.0,
+        0.0,
         description="Minimum allocation % to show kimchi premium opportunity (filters noise).",
+    )
+    kimchi_deviation_threshold_pct: float = Field(
+        0.3,
+        description="Only show kimchi premiums that deviate from average by this % (filters normal market state).",
     )
 
     class Config:

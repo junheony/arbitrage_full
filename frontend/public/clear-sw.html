@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Clear Service Workers</title>
+</head>
+<body>
+    <h1>Clearing Service Workers...</h1>
+    <div id="status"></div>
+    <script>
+        const status = document.getElementById('status');
+
+        // Unregister all service workers
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(function(registrations) {
+                if (registrations.length === 0) {
+                    status.innerHTML = '<p style="color: green;">No service workers found!</p>';
+                } else {
+                    for(let registration of registrations) {
+                        registration.unregister();
+                        status.innerHTML += '<p style="color: blue;">Unregistered: ' + registration.scope + '</p>';
+                    }
+                    status.innerHTML += '<p style="color: green;">All service workers cleared!</p>';
+                    status.innerHTML += '<p><a href="/">Go to main page</a></p>';
+                }
+            });
+        } else {
+            status.innerHTML = '<p>Service workers not supported</p>';
+        }
+
+        // Clear all caches
+        if ('caches' in window) {
+            caches.keys().then(function(names) {
+                for (let name of names) {
+                    caches.delete(name);
+                }
+                status.innerHTML += '<p style="color: green;">All caches cleared!</p>';
+            });
+        }
+
+        // Clear localStorage and sessionStorage
+        localStorage.clear();
+        sessionStorage.clear();
+        status.innerHTML += '<p style="color: green;">Storage cleared!</p>';
+    </script>
+</body>
+</html>
