@@ -14,7 +14,7 @@ export interface FuturesData extends PriceData {
 
 export interface SpreadData {
   symbol: string;
-  type: 'futures_gap' | 'cex_dex' | 'kimchi' | 'funding';
+  type: 'futures_gap' | 'cex_dex' | 'kimchi' | 'funding' | 'cex_arb';
   spreadPct: number;
   buyExchange: string;
   sellExchange: string;

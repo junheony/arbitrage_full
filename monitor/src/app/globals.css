@@ -103,6 +103,14 @@ body {
   background: rgba(248, 113, 113, 0.1);
 }
 
+.data-table tr.row-cex {
+  background: rgba(168, 85, 247, 0.05);
+}
+
+.data-table tr.row-cex:hover {
+  background: rgba(168, 85, 247, 0.1);
+}
+
 /* Badge */
 .badge {
   display: inline-flex;
@@ -132,6 +140,12 @@ body {
   background: rgba(248, 113, 113, 0.15);
   color: #f87171;
   border: 1px solid rgba(248, 113, 113, 0.3);
+}
+
+.badge-cex {
+  background: rgba(168, 85, 247, 0.15);
+  color: #a855f7;
+  border: 1px solid rgba(168, 85, 247, 0.3);
 }
 
 /* Spread values */
@@ -210,6 +224,11 @@ body {
 .tab-button.active.tab-funding {
   border-color: #f87171;
   color: #f87171;
+}
+
+.tab-button.active.tab-cex_arb {
+  border-color: #a855f7;
+  color: #a855f7;
 }
 
 /* Input */

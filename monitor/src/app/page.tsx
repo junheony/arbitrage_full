@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 
 interface SpreadData {
   symbol: string;
-  type: 'futures_gap' | 'kimchi' | 'funding';
+  type: 'futures_gap' | 'kimchi' | 'funding' | 'cex_arb';
   spreadPct: number;
   buyExchange: string;
   sellExchange: string;
@@ -24,7 +24,9 @@ interface Stats {
   futures_gap: { count: number; maxGap: number; avgGap: number };
   kimchi: { count: number; avgPremium: number; maxPremium: number };
   funding: { count: number; avgRate: number; maxRate: number };
+  cex_arb: { count: number; avgSpread: number; maxSpread: number };
   usdKrwRate: number;
+  exchanges?: Record<string, number>;
 }
 
 interface ApiResponse {
@@ -34,7 +36,7 @@ interface ApiResponse {
   spreads: SpreadData[];
 }
 
-type TabType = 'all' | 'futures_gap' | 'kimchi' | 'funding';
+type TabType = 'all' | 'futures_gap' | 'kimchi' | 'funding' | 'cex_arb';
 
 export default function Home() {
   const [spreads, setSpreads] = useState<SpreadData[]>([]);
@@ -48,6 +50,7 @@ export default function Home() {
   const [minGap, setMinGap] = useState(0.5);
   const [minKimchi, setMinKimchi] = useState(1.5);
   const [minFunding, setMinFunding] = useState(0.05);
+  const [minCex, setMinCex] = useState(0.5);
 
   const [showConfig, setShowConfig] = useState(false);
   const [botToken, setBotToken] = useState('');
@@ -73,6 +76,7 @@ export default function Home() {
         minGap: minGap.toString(),
         minKimchi: minKimchi.toString(),
         minFunding: minFunding.toString(),
+        minCex: minCex.toString(),
       });
       const res = await fetch(`/api/spreads?${params}`);
       const data: ApiResponse = await res.json();
@@ -90,7 +94,7 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-  }, [minGap, minKimchi, minFunding]);
+  }, [minGap, minKimchi, minFunding, minCex]);
 
   useEffect(() => {
     fetchSpreads();
@@ -137,6 +141,7 @@ export default function Home() {
       case 'futures_gap': return '시평갭';
       case 'kimchi': return '김프';
       case 'funding': return '펀딩';
+      case 'cex_arb': return 'CEX';
       default: return type;
     }
   };
@@ -146,6 +151,7 @@ export default function Home() {
       case 'futures_gap': return 'row-futures';
       case 'kimchi': return 'row-kimchi';
       case 'funding': return 'row-funding';
+      case 'cex_arb': return 'row-cex';
       default: return '';
     }
   };
@@ -155,6 +161,7 @@ export default function Home() {
       case 'futures_gap': return 'badge-futures';
       case 'kimchi': return 'badge-kimchi';
       case 'funding': return 'badge-funding';
+      case 'cex_arb': return 'badge-cex';
       default: return '';
     }
   };
@@ -176,6 +183,17 @@ export default function Home() {
         {s.spreadPct > 0 ? '+' : ''}{s.spreadPct.toFixed(2)}%
       </span>
     );
+  };
+
+  const getTabCount = (tab: TabType) => {
+    if (!stats) return 0;
+    switch (tab) {
+      case 'futures_gap': return stats.futures_gap.count;
+      case 'kimchi': return stats.kimchi.count;
+      case 'funding': return stats.funding.count;
+      case 'cex_arb': return stats.cex_arb?.count || 0;
+      default: return 0;
+    }
   };
 
   return (
@@ -214,7 +232,7 @@ export default function Home() {
 
         {/* Stats Cards */}
         {stats && (
-          <div className="grid grid-cols-3 gap-4 mb-6">
+          <div className="grid grid-cols-4 gap-4 mb-6">
             <div className="stat-card">
               <div className="label">시평갭</div>
               <div className="value text-yellow-400">
@@ -234,6 +252,15 @@ export default function Home() {
               </div>
             </div>
             <div className="stat-card">
+              <div className="label">CEX 재정</div>
+              <div className="value text-purple-400">
+                {stats.cex_arb?.count || 0}
+                <span className="text-sm text-gray-500 ml-2">
+                  max {(stats.cex_arb?.maxSpread || 0).toFixed(1)}%
+                </span>
+              </div>
+            </div>
+            <div className="stat-card">
               <div className="label">Total</div>
               <div className="value text-white">{stats.total}</div>
             </div>
@@ -241,18 +268,17 @@ export default function Home() {
         )}
 
         {/* Tabs */}
-        <div className="flex gap-2 mb-6">
-          {(['all', 'futures_gap', 'kimchi', 'funding'] as TabType[]).map(tab => (
+        <div className="flex gap-2 mb-6 flex-wrap">
+          {(['all', 'futures_gap', 'kimchi', 'funding', 'cex_arb'] as TabType[]).map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
               className={`tab-button ${activeTab === tab ? `active tab-${tab === 'futures_gap' ? 'futures' : tab}` : ''}`}
             >
               {tab === 'all' ? 'ALL' : getTypeLabel(tab)}
-              {tab !== 'all' && stats && (
+              {tab !== 'all' && (
                 <span className="ml-2 text-gray-500">
-                  {tab === 'futures_gap' ? stats.futures_gap.count :
-                   tab === 'kimchi' ? stats.kimchi.count : stats.funding.count}
+                  {getTabCount(tab)}
                 </span>
               )}
             </button>
@@ -260,7 +286,7 @@ export default function Home() {
         </div>
 
         {/* Filters */}
-        <div className="flex flex-wrap gap-6 items-center text-sm">
+        <div className="flex flex-wrap gap-4 items-center text-sm">
           <label className="flex items-center gap-2">
             <span className="text-gray-500">시평갭 ≥</span>
             <input type="number" value={minGap} onChange={(e) => setMinGap(parseFloat(e.target.value) || 0)} step="0.1" />
@@ -276,6 +302,11 @@ export default function Home() {
             <input type="number" value={minFunding} onChange={(e) => setMinFunding(parseFloat(e.target.value) || 0)} step="0.01" />
             <span className="text-gray-500">%</span>
           </label>
+          <label className="flex items-center gap-2">
+            <span className="text-gray-500">CEX ≥</span>
+            <input type="number" value={minCex} onChange={(e) => setMinCex(parseFloat(e.target.value) || 0)} step="0.1" />
+            <span className="text-gray-500">%</span>
+          </label>
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
@@ -283,7 +314,7 @@ export default function Home() {
               onChange={(e) => setAutoRefresh(e.target.checked)}
               className="w-4 h-4 accent-green-500"
             />
-            <span className="text-gray-400">Auto Refresh</span>
+            <span className="text-gray-400">Auto</span>
           </label>
           <button onClick={fetchSpreads} disabled={loading}>
             Refresh
@@ -339,7 +370,7 @@ export default function Home() {
             <thead>
               <tr>
                 <th style={{width: '70px'}}>Type</th>
-                <th style={{width: '80px'}}>Symbol</th>
+                <th style={{width: '100px'}}>Symbol</th>
                 <th style={{width: '120px'}}>Spread</th>
                 <th style={{width: '180px'}}>Route</th>
                 <th>Buy</th>
@@ -390,6 +421,8 @@ export default function Home() {
                       </div>
                     ) : s.type === 'futures_gap' ? (
                       <span className="text-xs text-gray-500">{s.leverage}x</span>
+                    ) : s.type === 'cex_arb' ? (
+                      <span className="text-xs text-purple-400">Cross-CEX</span>
                     ) : (
                       <span className="text-xs text-gray-500">
                         {s.spreadPct > 0 ? 'Long→' : 'Short→'}
@@ -412,7 +445,7 @@ export default function Home() {
 
       {/* Footer */}
       <footer className="mt-12 text-center text-xs text-gray-600">
-        v0.2.0 • Binance + Upbit • {new Date().toLocaleDateString('ko-KR')}
+        v0.3.0 • Binance • Bybit • OKX • Gate • Bitget • BingX • Upbit
       </footer>
     </div>
   );

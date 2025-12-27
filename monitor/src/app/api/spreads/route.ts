@@ -2,10 +2,22 @@ import { NextResponse } from 'next/server';
 import { fetchAllPremiumIndex, getMaxLeverage, fetchSpotTickers } from '@/lib/binance';
 import { fetchUpbitTickers, fetchUsdKrwRate, calculateKimchiPremium } from '@/lib/upbit';
 import { fetchUpbitDepositStatus, fetchBinanceDepositStatus } from '@/lib/deposit-status';
+import { fetchBybitSpotTickers, fetchBybitFundingRates } from '@/lib/bybit';
+import { fetchOkxSpotTickers, fetchOkxFundingRates } from '@/lib/okx';
+import { fetchGateSpotTickers, fetchGateFundingRates } from '@/lib/gate';
+import { fetchBitgetSpotTickers, fetchBitgetFundingRates } from '@/lib/bitget';
+import { fetchBingxSpotTickers, fetchBingxFundingRates } from '@/lib/bingx';
 import type { SpreadData } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
+
+type ExchangeName = 'Binance' | 'Bybit' | 'OKX' | 'Gate' | 'Bitget' | 'BingX' | 'Upbit';
+
+interface ExchangePrice {
+  exchange: ExchangeName;
+  price: number;
+}
 
 export async function GET(request: Request) {
   try {
@@ -13,22 +25,50 @@ export async function GET(request: Request) {
     const minGap = parseFloat(searchParams.get('minGap') || '0.3');
     const minKimchi = parseFloat(searchParams.get('minKimchi') || '1.0');
     const minFunding = parseFloat(searchParams.get('minFunding') || '0.05');
-    const types = searchParams.get('types')?.split(',') || ['futures_gap', 'kimchi', 'funding'];
+    const minCex = parseFloat(searchParams.get('minCex') || '0.5'); // CEX arbitrage threshold
+    const types = searchParams.get('types')?.split(',') || ['futures_gap', 'kimchi', 'funding', 'cex_arb'];
 
     const now = Date.now();
     const spreads: SpreadData[] = [];
 
     // Fetch all data in parallel
-    const [premiumIndex, binanceSpot, upbitTickers, usdKrwRate, upbitWalletStatus, binanceWalletStatus] = await Promise.all([
+    const [
+      premiumIndex,
+      binanceSpot,
+      upbitTickers,
+      usdKrwRate,
+      upbitWalletStatus,
+      binanceWalletStatus,
+      bybitSpot,
+      bybitFunding,
+      okxSpot,
+      okxFunding,
+      gateSpot,
+      gateFunding,
+      bitgetSpot,
+      bitgetFunding,
+      bingxSpot,
+      bingxFunding,
+    ] = await Promise.all([
       fetchAllPremiumIndex(),
       fetchSpotTickers(),
       fetchUpbitTickers(),
       fetchUsdKrwRate(),
       fetchUpbitDepositStatus(),
       fetchBinanceDepositStatus(),
+      fetchBybitSpotTickers(),
+      fetchBybitFundingRates(),
+      fetchOkxSpotTickers(),
+      fetchOkxFundingRates(),
+      fetchGateSpotTickers(),
+      fetchGateFundingRates(),
+      fetchBitgetSpotTickers(),
+      fetchBitgetFundingRates(),
+      fetchBingxSpotTickers(),
+      fetchBingxFundingRates(),
     ]);
 
-    // 1. Futures Gap (시평갭)
+    // 1. Futures Gap (시평갭) - Binance only
     if (types.includes('futures_gap')) {
       for (const [symbol, data] of premiumIndex) {
         if (!symbol.endsWith('USDT')) continue;
@@ -46,7 +86,7 @@ export async function GET(request: Request) {
           sellPrice: data.markPrice,
           leverage: getMaxLeverage(symbol),
           timestamp: now,
-          tradeable: true, // Futures trading is always available on same exchange
+          tradeable: true,
         });
       }
     }
@@ -63,10 +103,8 @@ export async function GET(request: Request) {
           usdKrwRate
         );
 
-        // Skip if below threshold or invalid
         if (Math.abs(kimchiPct) < minKimchi || kimchiPct === 0) continue;
 
-        // Get wallet status from both exchanges
         const upbitStatus = upbitWalletStatus.get(symbol);
         const binanceStatus = binanceWalletStatus.get(symbol);
 
@@ -75,20 +113,10 @@ export async function GET(request: Request) {
         const binanceDeposit = binanceStatus?.depositEnabled ?? null;
         const binanceWithdraw = binanceStatus?.withdrawEnabled ?? null;
 
-        // For kimchi arb:
-        // - Positive premium (정프): Buy on Binance, sell on Upbit
-        //   Need: Binance withdraw (to send coins), Upbit deposit (to receive coins)
-        // - Negative premium (역프): Buy on Upbit, sell on Binance
-        //   Need: Upbit withdraw (to send coins), Binance deposit (to receive coins)
-
-        // depositStatus shows what's needed for the trade:
-        // buy = can withdraw from buy exchange (to send coins)
-        // sell = can deposit to sell exchange (to receive coins)
         const depositStatus = kimchiPct > 0
-          ? { buy: binanceWithdraw, sell: upbitDeposit } // 정프: Binance출금, Upbit입금
-          : { buy: upbitWithdraw, sell: binanceDeposit }; // 역프: Upbit출금, Binance입금
+          ? { buy: binanceWithdraw, sell: upbitDeposit }
+          : { buy: upbitWithdraw, sell: binanceDeposit };
 
-        // Tradeable if both withdraw from buy and deposit to sell are enabled
         const isTradeable = depositStatus.buy === true && depositStatus.sell === true;
 
         spreads.push({
@@ -106,26 +134,115 @@ export async function GET(request: Request) {
       }
     }
 
-    // 3. Funding Rate (펀딩비)
+    // 3. Funding Rate (펀딩비) - All exchanges
     if (types.includes('funding')) {
+      // Collect all funding rates by symbol
+      const allFundingRates = new Map<string, { exchange: ExchangeName; rate: number }[]>();
+
+      const addFunding = (
+        rates: Map<string, { rate: number; symbol: string }>,
+        exchange: ExchangeName
+      ) => {
+        for (const [symbol, data] of rates) {
+          if (!allFundingRates.has(symbol)) {
+            allFundingRates.set(symbol, []);
+          }
+          allFundingRates.get(symbol)!.push({ exchange, rate: data.rate });
+        }
+      };
+
+      // Add Binance funding from premium index
       for (const [symbol, data] of premiumIndex) {
-        if (!symbol.endsWith('USDT')) continue;
+        if (!allFundingRates.has(symbol)) {
+          allFundingRates.set(symbol, []);
+        }
+        allFundingRates.get(symbol)!.push({
+          exchange: 'Binance',
+          rate: data.lastFundingRate * 100,
+        });
+      }
 
-        const fundingPct = data.lastFundingRate * 100; // Convert to percentage
-        if (Math.abs(fundingPct) < minFunding) continue;
+      addFunding(bybitFunding, 'Bybit');
+      addFunding(okxFunding, 'OKX');
+      addFunding(gateFunding, 'Gate');
+      addFunding(bitgetFunding, 'Bitget');
+      addFunding(bingxFunding, 'BingX');
 
-        // Annualized rate (3 times per day * 365 days)
-        const annualizedPct = fundingPct * 3 * 365;
+      // Find highest funding rate for each symbol
+      for (const [symbol, rates] of allFundingRates) {
+        if (rates.length === 0) continue;
+
+        // Sort by absolute rate
+        rates.sort((a, b) => Math.abs(b.rate) - Math.abs(a.rate));
+        const best = rates[0];
+
+        if (Math.abs(best.rate) < minFunding) continue;
+
+        const annualizedPct = best.rate * 3 * 365;
 
         spreads.push({
           symbol,
           type: 'funding',
-          spreadPct: fundingPct,
-          buyExchange: fundingPct > 0 ? 'Spot' : 'Perp',
-          sellExchange: fundingPct > 0 ? 'Perp' : 'Spot',
+          spreadPct: best.rate,
+          buyExchange: best.rate > 0 ? 'Spot' : `${best.exchange} Perp`,
+          sellExchange: best.rate > 0 ? `${best.exchange} Perp` : 'Spot',
           buyPrice: annualizedPct,
-          sellPrice: data.nextFundingTime,
+          sellPrice: 0,
           leverage: getMaxLeverage(symbol),
+          timestamp: now,
+          tradeable: true,
+        });
+      }
+    }
+
+    // 4. CEX Arbitrage (거래소간 재정거래)
+    if (types.includes('cex_arb')) {
+      // Collect all spot prices by symbol
+      const allSpotPrices = new Map<string, ExchangePrice[]>();
+
+      const addPrices = (
+        tickers: Map<string, { price: number; symbol: string }>,
+        exchange: ExchangeName
+      ) => {
+        for (const [symbol, data] of tickers) {
+          if (!symbol.endsWith('USDT')) continue;
+          if (!allSpotPrices.has(symbol)) {
+            allSpotPrices.set(symbol, []);
+          }
+          allSpotPrices.get(symbol)!.push({ exchange, price: data.price });
+        }
+      };
+
+      addPrices(binanceSpot, 'Binance');
+      addPrices(bybitSpot, 'Bybit');
+      addPrices(okxSpot, 'OKX');
+      addPrices(gateSpot, 'Gate');
+      addPrices(bitgetSpot, 'Bitget');
+      addPrices(bingxSpot, 'BingX');
+
+      // Find arbitrage opportunities
+      for (const [symbol, prices] of allSpotPrices) {
+        if (prices.length < 2) continue;
+
+        // Sort by price
+        prices.sort((a, b) => a.price - b.price);
+        const lowest = prices[0];
+        const highest = prices[prices.length - 1];
+
+        if (lowest.price === 0) continue;
+
+        const spreadPct = ((highest.price - lowest.price) / lowest.price) * 100;
+
+        if (spreadPct < minCex) continue;
+
+        spreads.push({
+          symbol,
+          type: 'cex_arb' as any,
+          spreadPct,
+          buyExchange: lowest.exchange,
+          sellExchange: highest.exchange,
+          buyPrice: lowest.price,
+          sellPrice: highest.price,
           timestamp: now,
           tradeable: true,
         });
@@ -139,8 +256,8 @@ export async function GET(request: Request) {
     const futuresGaps = spreads.filter(s => s.type === 'futures_gap');
     const kimchiSpreads = spreads.filter(s => s.type === 'kimchi');
     const fundingSpreads = spreads.filter(s => s.type === 'funding');
+    const cexArbSpreads = spreads.filter(s => s.type === 'cex_arb');
 
-    // Helper to safely calculate stats
     const safeAvg = (arr: number[]) => arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
     const safeMax = (arr: number[]) => arr.length > 0 ? Math.max(...arr) : 0;
 
@@ -162,7 +279,21 @@ export async function GET(request: Request) {
         avgRate: safeAvg(fundingSpreads.map(s => s.spreadPct)),
         maxRate: safeMax(fundingSpreads.map(s => Math.abs(s.spreadPct))),
       },
+      cex_arb: {
+        count: cexArbSpreads.length,
+        avgSpread: safeAvg(cexArbSpreads.map(s => s.spreadPct)),
+        maxSpread: safeMax(cexArbSpreads.map(s => s.spreadPct)),
+      },
       usdKrwRate,
+      exchanges: {
+        binance: binanceSpot.size,
+        bybit: bybitSpot.size,
+        okx: okxSpot.size,
+        gate: gateSpot.size,
+        bitget: bitgetSpot.size,
+        bingx: bingxSpot.size,
+        upbit: upbitTickers.size,
+      },
     };
 
     return NextResponse.json({
@@ -172,6 +303,7 @@ export async function GET(request: Request) {
         minGap,
         minKimchi,
         minFunding,
+        minCex,
         types,
       },
       stats,
