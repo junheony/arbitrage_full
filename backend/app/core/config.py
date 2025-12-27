@@ -128,6 +128,11 @@ class Settings(BaseSettings):
         description="Only show kimchi premiums that deviate from average by this % (filters normal market state).",
     )
 
+    # Upbit wallet proxy settings / 업비트 지갑 프록시 설정
+    upbit_access_key: str = Field(default="", description="Upbit API access key.")
+    upbit_secret_key: str = Field(default="", description="Upbit API secret key.")
+    wallet_proxy_token: str = Field(default="", description="Token for wallet status proxy endpoint.")
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

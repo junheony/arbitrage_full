@@ -11,6 +11,7 @@ from app.api.portfolio_routes import router as portfolio_router
 from app.api.execution_routes import router as execution_router
 from app.api.autotrading_routes import router as autotrading_router
 from app.api.positions_routes import router as positions_router
+from app.api.wallet_routes import router as wallet_router
 from app.db.init_db import init_db
 from app.connectors.binance_spot import BinanceSpotConnector
 from app.connectors.bithumb_spot import BithumbSpotConnector
@@ -47,7 +48,7 @@ app = FastAPI(title=settings.app_name)
 # Allow local frontend dev server during MVP.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:5174", "http://127.0.0.1:5174", "http://localhost:5175", "http://127.0.0.1:5175"],
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:5174", "http://127.0.0.1:5174", "http://localhost:5175", "http://127.0.0.1:5175", "https://monitor-chi-tan.vercel.app", "*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -58,6 +59,7 @@ app.include_router(portfolio_router, prefix="/api/portfolio")
 app.include_router(execution_router, prefix="/api/execution")
 app.include_router(autotrading_router, prefix="/api/autotrading")
 app.include_router(positions_router, prefix="/api/positions")
+app.include_router(wallet_router, prefix="/api/wallet")
 
 
 @app.on_event("startup")

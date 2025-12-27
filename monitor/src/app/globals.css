@@ -1,0 +1,344 @@
+@import "tailwindcss";
+
+:root {
+  --background: #0a0a0a;
+  --foreground: #e0e0e0;
+  --accent: #00ff00;
+  --kimchi: #4ade80;
+  --futures: #facc15;
+  --funding: #f87171;
+  --muted: #666666;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #111;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #444;
+}
+
+/* Glow effect */
+.glow {
+  text-shadow: 0 0 10px currentColor;
+}
+
+/* Table styles */
+.data-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+  font-size: 13px;
+}
+
+.data-table th {
+  padding: 12px 16px;
+  text-align: left;
+  background: #1a1a1a;
+  color: #888;
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 1px;
+  border-bottom: 2px solid #333;
+  position: sticky;
+  top: 0;
+}
+
+.data-table td {
+  padding: 14px 16px;
+  border-bottom: 1px solid #1a1a1a;
+  vertical-align: middle;
+}
+
+.data-table tbody tr {
+  transition: background 0.15s;
+}
+
+.data-table tbody tr:hover {
+  background: #1a1a1a;
+}
+
+/* Row type backgrounds */
+.data-table tr.row-kimchi {
+  background: rgba(74, 222, 128, 0.05);
+}
+
+.data-table tr.row-futures {
+  background: rgba(250, 204, 21, 0.05);
+}
+
+.data-table tr.row-funding {
+  background: rgba(248, 113, 113, 0.05);
+}
+
+.data-table tr.row-kimchi:hover {
+  background: rgba(74, 222, 128, 0.1);
+}
+
+.data-table tr.row-futures:hover {
+  background: rgba(250, 204, 21, 0.1);
+}
+
+.data-table tr.row-funding:hover {
+  background: rgba(248, 113, 113, 0.1);
+}
+
+/* Badge */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  min-width: 60px;
+}
+
+.badge-kimchi {
+  background: rgba(74, 222, 128, 0.15);
+  color: #4ade80;
+  border: 1px solid rgba(74, 222, 128, 0.3);
+}
+
+.badge-futures {
+  background: rgba(250, 204, 21, 0.15);
+  color: #facc15;
+  border: 1px solid rgba(250, 204, 21, 0.3);
+}
+
+.badge-funding {
+  background: rgba(248, 113, 113, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(248, 113, 113, 0.3);
+}
+
+/* Spread values */
+.spread-positive {
+  color: #f87171;
+  font-weight: 600;
+}
+
+.spread-negative {
+  color: #4ade80;
+  font-weight: 600;
+}
+
+/* Card */
+.card {
+  background: #111;
+  border: 1px solid #222;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.stat-card {
+  background: linear-gradient(135deg, #111 0%, #1a1a1a 100%);
+  border: 1px solid #222;
+  border-radius: 10px;
+  padding: 16px 20px;
+}
+
+.stat-card .label {
+  font-size: 11px;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 6px;
+}
+
+.stat-card .value {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+/* Tabs */
+.tab-button {
+  padding: 10px 20px;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 8px;
+  transition: all 0.2s;
+  border: 1px solid transparent;
+}
+
+.tab-button:hover {
+  background: #1a1a1a;
+}
+
+.tab-button.active {
+  background: #1a1a1a;
+  border-color: #333;
+}
+
+.tab-button.active.tab-all {
+  border-color: #00ff00;
+  color: #00ff00;
+}
+
+.tab-button.active.tab-kimchi {
+  border-color: #4ade80;
+  color: #4ade80;
+}
+
+.tab-button.active.tab-futures {
+  border-color: #facc15;
+  color: #facc15;
+}
+
+.tab-button.active.tab-funding {
+  border-color: #f87171;
+  color: #f87171;
+}
+
+/* Input */
+input, select {
+  background: #111;
+  border: 1px solid #333;
+  color: #e0e0e0;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 13px;
+}
+
+input:focus, select:focus {
+  outline: none;
+  border-color: #00ff00;
+}
+
+input[type="number"] {
+  width: 70px;
+}
+
+/* Button */
+button {
+  background: #1a1a1a;
+  border: 1px solid #333;
+  color: #e0e0e0;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+button:hover {
+  background: #222;
+  border-color: #444;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Loading */
+.loading {
+  display: inline-block;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+/* Symbol column */
+.symbol-name {
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0.5px;
+}
+
+/* Price columns */
+.price {
+  font-family: 'SF Mono', monospace;
+  color: #888;
+}
+
+/* Info column */
+.info {
+  font-size: 12px;
+  color: #666;
+}
+
+/* 김프 버튼 (메인) */
+.kimchi-button {
+  background: linear-gradient(135deg, rgba(74, 222, 128, 0.1) 0%, rgba(74, 222, 128, 0.05) 100%);
+  border: 2px solid rgba(74, 222, 128, 0.3);
+  border-radius: 16px;
+  padding: 24px 32px;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: center;
+}
+
+.kimchi-button:hover {
+  border-color: rgba(74, 222, 128, 0.5);
+  background: linear-gradient(135deg, rgba(74, 222, 128, 0.15) 0%, rgba(74, 222, 128, 0.08) 100%);
+  transform: translateY(-1px);
+}
+
+.kimchi-button:active {
+  transform: translateY(0);
+}
+
+.kimchi-label {
+  font-size: 14px;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  margin-bottom: 8px;
+}
+
+.kimchi-rate {
+  color: #666;
+  font-size: 12px;
+  margin-left: 8px;
+}
+
+.kimchi-value {
+  font-size: 48px;
+  font-weight: 700;
+  line-height: 1.1;
+  margin-bottom: 8px;
+}
+
+.kimchi-value.positive {
+  color: #f87171;
+  text-shadow: 0 0 30px rgba(248, 113, 113, 0.3);
+}
+
+.kimchi-value.negative {
+  color: #4ade80;
+  text-shadow: 0 0 30px rgba(74, 222, 128, 0.3);
+}
+
+.kimchi-sub {
+  font-size: 13px;
+  color: #666;
+}
