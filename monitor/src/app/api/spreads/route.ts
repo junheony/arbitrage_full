@@ -197,7 +197,10 @@ export async function GET(request: Request) {
 
     // 4. CEX Arbitrage (거래소간 재정거래)
     if (types.includes('cex_arb')) {
-      // Collect all spot prices by symbol
+      // Only compare symbols that exist on Binance (reference exchange)
+      const binanceSymbols = new Set(binanceSpot.keys());
+
+      // Collect all spot prices by symbol (only for Binance-listed coins)
       const allSpotPrices = new Map<string, ExchangePrice[]>();
 
       const addPrices = (
@@ -206,6 +209,11 @@ export async function GET(request: Request) {
       ) => {
         for (const [symbol, data] of tickers) {
           if (!symbol.endsWith('USDT')) continue;
+          // Only include if listed on Binance
+          if (!binanceSymbols.has(symbol)) continue;
+          // Skip very low prices (likely bad data or different token)
+          if (data.price < 0.0001) continue;
+
           if (!allSpotPrices.has(symbol)) {
             allSpotPrices.set(symbol, []);
           }
@@ -233,7 +241,9 @@ export async function GET(request: Request) {
 
         const spreadPct = ((highest.price - lowest.price) / lowest.price) * 100;
 
+        // Skip if spread is too low or unrealistically high (bad data)
         if (spreadPct < minCex) continue;
+        if (spreadPct > 50) continue; // More than 50% spread is likely bad data
 
         spreads.push({
           symbol,
