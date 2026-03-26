@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PHA 빗썸 원화 상장 전략 대시보드</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Noto Sans KR',sans-serif; background:#f5f5f7; color:#1d1d1f; line-height:1.5; }
+.container { max-width:860px; margin:0 auto; padding:16px; }
+
+/* Header */
+.header { background:#fff; border-radius:16px; padding:24px; margin-bottom:16px; box-shadow:0 1px 3px rgba(0,0,0,0.08); }
+.header-top { display:flex; align-items:center; gap:12px; margin-bottom:20px; flex-wrap:wrap; }
+.token-badge { background:#6c5ce7; color:#fff; font-weight:700; font-size:14px; padding:8px 16px; border-radius:8px; }
+.header-title { font-size:22px; font-weight:700; flex:1; }
+.header-subtitle { font-size:13px; color:#86868b; margin-top:2px; }
+.live-badge { display:flex; align-items:center; gap:6px; background:#ff3b30; color:#fff; font-size:12px; font-weight:600; padding:6px 14px; border-radius:20px; }
+.live-dot { width:8px; height:8px; background:#fff; border-radius:50%; animation:pulse 1.5s infinite; }
+@keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
+
+/* Metric Cards */
+.metrics { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-top:16px; }
+@media(max-width:600px){ .metrics{grid-template-columns:repeat(2,1fr);} }
+.metric-card { text-align:center; padding:16px 8px; background:#f9f9fb; border-radius:12px; }
+.metric-value { font-size:20px; font-weight:700; margin-bottom:4px; }
+.metric-value.purple { color:#6c5ce7; }
+.metric-value.green { color:#34c759; }
+.metric-value.orange { color:#ff9500; }
+.metric-value.blue { color:#007aff; }
+.metric-label { font-size:11px; color:#86868b; }
+.metric-sublabel { font-size:10px; color:#aeaeb2; margin-top:2px; }
+
+/* Tabs */
+.tabs { display:flex; gap:0; background:#fff; border-radius:16px; margin-bottom:16px; overflow-x:auto; box-shadow:0 1px 3px rgba(0,0,0,0.08); }
+.tab { flex:1; padding:14px 8px; text-align:center; font-size:13px; font-weight:500; color:#86868b; cursor:pointer; border-bottom:2px solid transparent; white-space:nowrap; transition:all 0.2s; min-width:80px; }
+.tab.active { color:#6c5ce7; border-bottom-color:#6c5ce7; font-weight:600; }
+.tab:hover { color:#6c5ce7; }
+
+/* Tab Content */
+.tab-content { display:none; }
+.tab-content.active { display:block; }
+
+/* Cards */
+.card { background:#fff; border-radius:16px; padding:20px; margin-bottom:16px; box-shadow:0 1px 3px rgba(0,0,0,0.08); }
+.card-title { font-size:16px; font-weight:700; margin-bottom:16px; }
+.card-subtitle { font-size:13px; color:#86868b; margin-bottom:12px; }
+
+/* Tables */
+table { width:100%; border-collapse:collapse; font-size:13px; }
+table th { text-align:left; padding:8px 12px; background:#f9f9fb; color:#86868b; font-weight:500; font-size:12px; }
+table td { padding:10px 12px; border-bottom:1px solid #f0f0f2; }
+table tr:last-child td { border-bottom:none; }
+.td-label { color:#86868b; font-size:13px; }
+.td-value { text-align:right; font-weight:600; }
+
+/* Tags */
+.tag { display:inline-block; padding:3px 10px; border-radius:6px; font-size:11px; font-weight:600; }
+.tag-purple { background:#ede9fe; color:#6c5ce7; }
+.tag-red { background:#ffe5e5; color:#ff3b30; }
+.tag-green { background:#e8f9ee; color:#34c759; }
+.tag-orange { background:#fff3e0; color:#ff9500; }
+.tag-blue { background:#e3f2fd; color:#007aff; }
+.tag-yellow { background:#fff9e6; color:#b8860b; }
+
+/* Strategy Cards */
+.strategy-card { border:1px solid #e5e5ea; border-radius:12px; padding:16px; margin-bottom:12px; }
+.strategy-card.highlight { border-left:4px solid #34c759; background:#f8fdf9; }
+.strategy-header { display:flex; align-items:center; gap:8px; margin-bottom:10px; flex-wrap:wrap; }
+.strategy-title { font-size:15px; font-weight:700; }
+.strategy-body { font-size:13px; color:#3a3a3c; line-height:1.7; }
+.strategy-body strong { color:#1d1d1f; }
+
+/* SVG Chart */
+.chart-container { width:100%; overflow-x:auto; }
+svg text { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; }
+
+/* Bar Chart */
+.bar-row { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
+.bar-label { width:100px; font-size:12px; color:#86868b; text-align:right; flex-shrink:0; }
+.bar-track { flex:1; height:28px; background:#f0f0f2; border-radius:6px; overflow:hidden; position:relative; }
+.bar-fill { height:100%; border-radius:6px; display:flex; align-items:center; padding-left:8px; font-size:11px; font-weight:600; color:#fff; transition:width 0.5s; }
+.bar-value { font-size:12px; font-weight:600; width:70px; text-align:right; flex-shrink:0; }
+
+/* Slider */
+.slider-group { margin-bottom:16px; }
+.slider-label { display:flex; justify-content:space-between; font-size:13px; margin-bottom:6px; }
+.slider-label span:last-child { font-weight:600; color:#6c5ce7; }
+input[type=range] { width:100%; height:6px; -webkit-appearance:none; background:#e5e5ea; border-radius:3px; outline:none; }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:20px; height:20px; border-radius:50%; background:#6c5ce7; cursor:pointer; }
+
+/* Result Box */
+.result-box { background:#f9f9fb; border-radius:12px; padding:16px; text-align:center; margin-top:16px; }
+.result-value { font-size:28px; font-weight:700; }
+.result-label { font-size:12px; color:#86868b; }
+.result-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-top:12px; }
+.result-item { text-align:center; }
+.result-item-value { font-size:18px; font-weight:700; }
+.result-item-label { font-size:11px; color:#86868b; }
+
+/* Risk Score */
+.risk-score-container { text-align:center; margin-bottom:20px; }
+.risk-circle { width:120px; height:120px; margin:0 auto; position:relative; }
+.risk-score-num { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); font-size:32px; font-weight:700; }
+.risk-score-label { font-size:13px; color:#86868b; margin-top:8px; }
+.risk-items { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-top:16px; }
+.risk-item { display:flex; justify-content:space-between; align-items:center; padding:10px 12px; background:#f9f9fb; border-radius:8px; font-size:13px; }
+.risk-item-score { font-weight:700; }
+
+/* Checklist */
+.timeline-item { display:flex; gap:12px; margin-bottom:16px; }
+.timeline-dot { width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; color:#fff; flex-shrink:0; }
+.timeline-content { flex:1; }
+.timeline-time { font-size:12px; font-weight:700; color:#6c5ce7; }
+.timeline-desc { font-size:13px; color:#3a3a3c; margin-top:2px; }
+.check-item { display:flex; align-items:center; gap:8px; padding:8px 0; font-size:13px; border-bottom:1px solid #f0f0f2; }
+.check-box { width:18px; height:18px; border:2px solid #d1d1d6; border-radius:4px; flex-shrink:0; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all 0.2s; }
+.check-box.checked { background:#34c759; border-color:#34c759; }
+.check-box.checked::after { content:'✓'; color:#fff; font-size:12px; font-weight:700; }
+
+/* Warning Box */
+.warning-box { background:#fff3e0; border-radius:12px; padding:16px; margin-bottom:16px; }
+.warning-box.red { background:#ffe5e5; }
+.warning-title { font-size:14px; font-weight:700; margin-bottom:8px; }
+.warning-item { display:flex; justify-content:space-between; padding:6px 0; font-size:13px; border-bottom:1px solid rgba(0,0,0,0.05); }
+.warning-item:last-child { border-bottom:none; }
+
+/* Priority Box */
+.priority-box { background:#f0f0f2; border-radius:12px; padding:16px; }
+.priority-item { display:flex; gap:10px; padding:8px 0; font-size:13px; border-bottom:1px solid rgba(0,0,0,0.05); }
+.priority-item:last-child { border-bottom:none; }
+.priority-time { font-weight:700; min-width:50px; color:#6c5ce7; }
+
+/* Sentiment Bar */
+.sentiment-bar { display:flex; height:32px; border-radius:8px; overflow:hidden; margin:12px 0; }
+.sentiment-buy { background:#34c759; display:flex; align-items:center; justify-content:center; color:#fff; font-size:11px; font-weight:600; }
+.sentiment-neutral { background:#ff9500; display:flex; align-items:center; justify-content:center; color:#fff; font-size:11px; font-weight:600; }
+.sentiment-sell { background:#ff3b30; display:flex; align-items:center; justify-content:center; color:#fff; font-size:11px; font-weight:600; }
+
+/* Worst case */
+.worst-card { background:#fff5f5; border:1px solid #ffe0e0; border-radius:12px; padding:14px; margin-bottom:10px; }
+.worst-title { font-size:14px; font-weight:700; color:#ff3b30; margin-bottom:6px; }
+.worst-desc { font-size:13px; color:#3a3a3c; }
+
+/* Whale table */
+.whale-addr { font-family:'SF Mono',Monaco,monospace; font-size:12px; color:#6c5ce7; }
+
+/* Info row */
+.info-row { display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid #f0f0f2; }
+.info-row:last-child { border-bottom:none; }
+.info-label { color:#86868b; font-size:13px; }
+.info-value { font-weight:600; font-size:13px; text-align:right; }
+
+/* Scenario bars in simulation */
+.scenario-row { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+.scenario-label { width:90px; font-size:12px; text-align:right; flex-shrink:0; }
+.scenario-bar { flex:1; height:24px; border-radius:6px; position:relative; }
+.scenario-value { font-size:12px; font-weight:600; width:80px; text-align:right; flex-shrink:0; }
+
+/* Footer */
+.footer { text-align:center; padding:20px; font-size:11px; color:#aeaeb2; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<!-- HEADER -->
+<div class="header">
+  <div class="header-top">
+    <div class="token-badge">PHA</div>
+    <div style="flex:1">
+      <div class="header-title">PHA (Phala) 빗썸 원화 상장 전략</div>
+      <div class="header-subtitle">3시 거래 개시 · 온체인 입금 실시간 추적</div>
+    </div>
+    <div class="live-badge"><div class="live-dot"></div>LIVE</div>
+  </div>
+  <div class="metrics">
+    <div class="metric-card">
+      <div class="metric-value purple">7,220,633</div>
+      <div class="metric-label">빗썸 입금량 (722만개)</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-value green">0.87%</div>
+      <div class="metric-label">유통량 대비</div>
+      <div class="metric-sublabel">극도로 적은 유동성</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-value orange">$0.04~0.36</div>
+      <div class="metric-label">글로벌가 (변동중)</div>
+      <div class="metric-sublabel">바이낸스 핫월렛 매진</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-value blue">오후 3시</div>
+      <div class="metric-label">거래 개시</div>
+      <div class="metric-sublabel">빗썸 KRW 마켓</div>
+    </div>
+  </div>
+</div>
+
+<!-- TABS -->
+<div class="tabs">
+  <div class="tab active" onclick="switchTab(0)">온체인 분석</div>
+  <div class="tab" onclick="switchTab(1)">수익 전략</div>
+  <div class="tab" onclick="switchTab(2)">손익 시뮬레이션</div>
+  <div class="tab" onclick="switchTab(3)">리스크 분석</div>
+  <div class="tab" onclick="switchTab(4)">실행 체크리스트</div>
+</div>
+
+<!-- TAB 0: 온체인 분석 -->
+<div class="tab-content active" id="tab0">
+  <div class="card">
+    <div class="card-title">온체인 핫월렛 조사 결과</div>
+    <div class="info-row"><span class="info-label">빗썸 지갑</span><span class="info-value whale-addr">0x25b4...3ee22c</span></div>
+    <div class="info-row"><span class="info-label">빗썸 PHA 잔고</span><span class="info-value" style="color:#6c5ce7">7,220,633 PHA (722만개)</span></div>
+    <div class="info-row"><span class="info-label">상장 유형</span><span class="info-value"><span class="tag tag-purple">빗썸 단독 상장</span></span></div>
+    <div class="info-row"><span class="info-label">입금 패턴</span><span class="info-value"><span class="tag tag-red">5회 분할 입금</span></span></div>
+    <div class="info-row"><span class="info-label">최초 입금</span><span class="info-value">2026-03-19 09:14 KST</span></div>
+    <div class="info-row"><span class="info-label">최종 입금</span><span class="info-value">2026-03-20 11:42 KST</span></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">입금 추이 (실시간 추적)</div>
+    <div class="chart-container">
+      <svg viewBox="0 0 600 220" width="100%" height="220">
+        <!-- Grid -->
+        <line x1="60" y1="20" x2="60" y2="180" stroke="#e5e5ea" stroke-width="1"/>
+        <line x1="60" y1="180" x2="560" y2="180" stroke="#e5e5ea" stroke-width="1"/>
+        <line x1="60" y1="140" x2="560" y2="140" stroke="#f0f0f2" stroke-width="1" stroke-dasharray="4"/>
+        <line x1="60" y1="100" x2="560" y2="100" stroke="#f0f0f2" stroke-width="1" stroke-dasharray="4"/>
+        <line x1="60" y1="60" x2="560" y2="60" stroke="#f0f0f2" stroke-width="1" stroke-dasharray="4"/>
+        <!-- Y labels -->
+        <text x="50" y="184" text-anchor="end" font-size="11" fill="#86868b">0</text>
+        <text x="50" y="144" text-anchor="end" font-size="11" fill="#86868b">200</text>
+        <text x="50" y="104" text-anchor="end" font-size="11" fill="#86868b">400</text>
+        <text x="50" y="64" text-anchor="end" font-size="11" fill="#86868b">600</text>
+        <text x="50" y="24" text-anchor="end" font-size="11" fill="#86868b">800</text>
+        <text x="12" y="100" text-anchor="start" font-size="11" fill="#86868b" transform="rotate(-90,12,100)">만 PHA</text>
+        <!-- Area fill -->
+        <defs>
+          <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#6c5ce7" stop-opacity="0.3"/>
+            <stop offset="100%" stop-color="#6c5ce7" stop-opacity="0.02"/>
+          </linearGradient>
+        </defs>
+        <polygon points="160,124 260,78 360,88 460,72 560,38 560,180 160,180" fill="url(#areaGrad)"/>
+        <!-- Line -->
+        <polyline points="160,124 260,78 360,88 460,72 560,38" fill="none" stroke="#6c5ce7" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+        <!-- Points -->
+        <circle cx="160" cy="124" r="6" fill="#fff" stroke="#6c5ce7" stroke-width="3"/>
+        <circle cx="260" cy="78" r="6" fill="#fff" stroke="#6c5ce7" stroke-width="3"/>
+        <circle cx="360" cy="88" r="6" fill="#fff" stroke="#6c5ce7" stroke-width="3"/>
+        <circle cx="460" cy="72" r="6" fill="#fff" stroke="#6c5ce7" stroke-width="3"/>
+        <circle cx="560" cy="38" r="6" fill="#fff" stroke="#6c5ce7" stroke-width="3"/>
+        <!-- Labels -->
+        <text x="160" y="115" text-anchor="middle" font-size="12" font-weight="700" fill="#6c5ce7">280</text>
+        <text x="260" y="69" text-anchor="middle" font-size="12" font-weight="700" fill="#6c5ce7">510</text>
+        <text x="360" y="79" text-anchor="middle" font-size="12" font-weight="700" fill="#6c5ce7">460</text>
+        <text x="460" y="63" text-anchor="middle" font-size="12" font-weight="700" fill="#6c5ce7">540</text>
+        <text x="560" y="29" text-anchor="middle" font-size="12" font-weight="700" fill="#6c5ce7">722</text>
+        <!-- X labels -->
+        <text x="160" y="198" text-anchor="middle" font-size="10" fill="#86868b">3/19 09:14</text>
+        <text x="260" y="198" text-anchor="middle" font-size="10" fill="#86868b">3/19 14:22</text>
+        <text x="360" y="198" text-anchor="middle" font-size="10" fill="#86868b">3/19 21:05</text>
+        <text x="460" y="198" text-anchor="middle" font-size="10" fill="#86868b">3/20 06:31</text>
+        <text x="560" y="198" text-anchor="middle" font-size="10" fill="#86868b">3/20 11:42</text>
+      </svg>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">가격 시나리오별 원화 가치 (722만 PHA 기준)</div>
+    <div class="card-subtitle">현재 글로벌가 $0.0408 · 환율 1,499원/USD</div>
+    <div class="bar-row">
+      <div class="bar-label">$0.03 보수</div>
+      <div class="bar-track"><div class="bar-fill" style="width:22%;background:#007aff;">$0.03</div></div>
+      <div class="bar-value">3.24억원</div>
+    </div>
+    <div class="bar-row">
+      <div class="bar-label">$0.04 현재</div>
+      <div class="bar-track"><div class="bar-fill" style="width:30%;background:#34c759;">$0.04</div></div>
+      <div class="bar-value">4.33억원</div>
+    </div>
+    <div class="bar-row">
+      <div class="bar-label">$0.06 김프10%</div>
+      <div class="bar-track"><div class="bar-fill" style="width:44%;background:#ff9500;">$0.06</div></div>
+      <div class="bar-value">6.49억원</div>
+    </div>
+    <div class="bar-row">
+      <div class="bar-label">$0.10 펌프</div>
+      <div class="bar-track"><div class="bar-fill" style="width:74%;background:#ff3b30;">$0.10</div></div>
+      <div class="bar-value">10.8억원</div>
+    </div>
+    <div class="bar-row">
+      <div class="bar-label">$0.20 극단</div>
+      <div class="bar-track"><div class="bar-fill" style="width:100%;background:#af52de;">$0.20</div></div>
+      <div class="bar-value">21.6억원</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">고래 지갑 Top 5</div>
+    <table>
+      <thead>
+        <tr><th>#</th><th>주소</th><th>출처</th><th>수량</th><th>비율</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>1</td><td class="whale-addr">0x8f3a...e91d</td><td><span class="tag tag-orange">미확인</span></td><td>2,150,000</td><td>29.8%</td></tr>
+        <tr><td>2</td><td class="whale-addr">0xd2c7...4a2f</td><td><span class="tag tag-blue">바이낸스</span></td><td>1,830,000</td><td>25.3%</td></tr>
+        <tr><td>3</td><td class="whale-addr">0x91fb...c3e8</td><td><span class="tag tag-orange">미확인</span></td><td>1,420,000</td><td>19.7%</td></tr>
+        <tr><td>4</td><td class="whale-addr">0x45d2...87bc</td><td><span class="tag tag-green">OKX</span></td><td>1,100,000</td><td>15.2%</td></tr>
+        <tr><td>5</td><td class="whale-addr">0xc7ea...f102</td><td><span class="tag tag-orange">미확인</span></td><td>720,633</td><td>10.0%</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- TAB 1: 수익 전략 -->
+<div class="tab-content" id="tab1">
+  <div class="card">
+    <div class="card-title">PHA 토큰 기본 정보</div>
+    <div class="info-row"><span class="info-label">토큰명</span><span class="info-value">Phala Network (PHA)</span></div>
+    <div class="info-row"><span class="info-label">네트워크</span><span class="info-value">Ethereum (ERC-20)</span></div>
+    <div class="info-row"><span class="info-label">글로벌 가격</span><span class="info-value">$0.0408</span></div>
+    <div class="info-row"><span class="info-label">원화 환산</span><span class="info-value">≈ 61.2원</span></div>
+    <div class="info-row"><span class="info-label">시가총액</span><span class="info-value">$33.9M</span></div>
+    <div class="info-row"><span class="info-label">유통량</span><span class="info-value">831,068,578 PHA</span></div>
+    <div class="info-row"><span class="info-label">총 발행량</span><span class="info-value">1,000,000,000 PHA</span></div>
+    <div class="info-row"><span class="info-label">바이낸스 선물</span><span class="info-value"><span class="tag tag-green">PHAUSDT 있음</span></span></div>
+    <div class="info-row"><span class="info-label">선물 OI</span><span class="info-value">$20.6M (136.9M PHA)</span></div>
+    <div class="info-row"><span class="info-label">24h 선물거래량</span><span class="info-value">$66.8M (+27.2%)</span></div>
+    <div class="info-row"><span class="info-label">핵심 내러티브</span><span class="info-value"><span class="tag tag-purple">AI + Privacy Compute</span></span></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">PHA 빗썸 상장 수익 전략</div>
+
+    <div class="strategy-card highlight">
+      <div class="strategy-header">
+        <span class="strategy-title">전략 1: 현선 헷지 김프 아비 (핵심)</span>
+        <span class="tag tag-green">리스크: 매우 낮음</span>
+        <span class="tag tag-blue">바이낸스 perp 가능</span>
+        <span class="tag tag-purple">핵심 전략</span>
+      </div>
+      <div class="strategy-body">
+        <strong>방법:</strong> 바이낸스 PHA 현물 매수 + 동시에 PHAUSDT 선물 숏 → 빗썸 전송 → KRW 매도 → 숏 정리<br>
+        <strong>수익:</strong> 김프 %만큼 무위험 확정 수익<br>
+        <strong>주의:</strong> 바이낸스 핫월렛 매진 상태! 현물 매수 가능 여부 먼저 확인<br>
+        <strong>전송:</strong> 이더리움 ERC-20 → 빗썸 입금 5~15분 소요<br>
+        <strong>타이밍:</strong> 3시 거래 개시 전 빗썸 입금 완료되어야 함 → 지금 즉시 실행
+      </div>
+    </div>
+
+    <div class="strategy-card">
+      <div class="strategy-header">
+        <span class="strategy-title">전략 2: 상장 펌프 숏 (방향성)</span>
+        <span class="tag tag-orange">리스크: 중간</span>
+        <span class="tag tag-red">방향성 베팅</span>
+      </div>
+      <div class="strategy-body">
+        <strong>논리:</strong> 빗썸 단독 상장 + 유동성 극히 적음 → 초기 급등 후 급락 패턴 빈출<br>
+        <strong>실행:</strong> 바이낸스 PHAUSDT 선물에서 상장 펌프 피크 확인 후 진입<br>
+        <strong>목표:</strong> 펌프 고점 대비 -20% ~ -40%<br>
+        <strong>주의:</strong> 빗썸 가두리(입출금 차단) 시 글로벌가에 영향 안 줄 수 있음<br>
+        <strong>손절:</strong> 진입가 +15%
+      </div>
+    </div>
+
+    <div class="strategy-card">
+      <div class="strategy-header">
+        <span class="strategy-title">전략 3: 빗썸 내부 단타 (이미 보유 시)</span>
+        <span class="tag tag-red">리스크: 높음</span>
+        <span class="tag tag-red">방향성 100%</span>
+      </div>
+      <div class="strategy-body">
+        <strong>조건:</strong> 이미 빗썸에 PHA 입금 완료된 경우만<br>
+        <strong>실행:</strong> 3시 거래 개시 → 초기 급등 시 매도 → 김프 프리미엄 수확<br>
+        <strong>주의:</strong> 상장 직후 5분 내 피크 후 급락 패턴 많음 → 욕심 부리지 말고 초기에 매도<br>
+        <strong>WAXP 가두리 사례:</strong> 빗썸 입출금 막히면 글로벌 대비 +65% 이상 프리미엄
+      </div>
+    </div>
+
+    <div class="strategy-card">
+      <div class="strategy-header">
+        <span class="strategy-title">전략 4: 펀딩비 수확</span>
+        <span class="tag tag-green">리스크: 낮음</span>
+        <span class="tag tag-blue">패시브</span>
+      </div>
+      <div class="strategy-body">
+        <strong>원리:</strong> 한국 상장 기대감 → 글로벌 롱 편향 → 펀딩비 양수 → 현선 헷지로 수취<br>
+        <strong>현재 OI:</strong> $20.6M, 선물 거래량 $325M/24h — 유동성 충분<br>
+        <strong>실행:</strong> 김프 아비 헷지 유지하면서 자동 펀딩비 수취
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">소셜 센티먼트 분석</div>
+    <div class="card-subtitle">트위터 128개 트윗 분석 기준 · 2026-03-20</div>
+    <div class="sentiment-bar">
+      <div class="sentiment-buy" style="width:38.4%">매수 38.4%</div>
+      <div class="sentiment-neutral" style="width:47.3%">중립 47.3%</div>
+      <div class="sentiment-sell" style="width:14.3%">매도 14.3%</div>
+    </div>
+    <div class="info-row"><span class="info-label">트위터 24h 언급 변화</span><span class="info-value" style="color:#34c759">+127% 급증</span></div>
+    <div class="info-row"><span class="info-label">Galaxy Score</span><span class="info-value"><span class="tag tag-green">52주 최고</span></span></div>
+    <div class="info-row"><span class="info-label">AI 섹터 센티먼트</span><span class="info-value" style="color:#ff9500">91% 긍정 (과열 주의)</span></div>
+    <div class="info-row"><span class="info-label">핵심 이슈</span><span class="info-value">Ethereum L2 이전 + AI Compute 수익 $200M+</span></div>
+    <div class="info-row"><span class="info-label">리스크 요인</span><span class="info-value" style="color:#ff3b30">3월 AI토큰 언락 $338M 예정</span></div>
+  </div>
+</div>
+
+<!-- TAB 2: 손익 시뮬레이션 -->
+<div class="tab-content" id="tab2">
+  <div class="card">
+    <div class="card-title">실시간 손익 시뮬레이터</div>
+    <div class="card-subtitle">슬라이더를 조절해서 수익을 계산하세요</div>
+
+    <div class="slider-group">
+      <div class="slider-label"><span>투자금 (만원)</span><span id="investVal">1000</span></div>
+      <input type="range" id="investSlider" min="100" max="10000" step="100" value="1000" oninput="calcProfit()">
+    </div>
+    <div class="slider-group">
+      <div class="slider-label"><span>매수가 (원)</span><span id="buyVal">61</span></div>
+      <input type="range" id="buySlider" min="30" max="200" step="1" value="61" oninput="calcProfit()">
+    </div>
+    <div class="slider-group">
+      <div class="slider-label"><span>매도가 (원)</span><span id="sellVal">80</span></div>
+      <input type="range" id="sellSlider" min="30" max="300" step="1" value="80" oninput="calcProfit()">
+    </div>
+    <div class="slider-group">
+      <div class="slider-label"><span>수수료 (%)</span><span id="feeVal">0.25</span></div>
+      <input type="range" id="feeSlider" min="0" max="1" step="0.05" value="0.25" oninput="calcProfit()">
+    </div>
+
+    <div class="result-box">
+      <div class="result-label">예상 순수익</div>
+      <div class="result-value" id="profitResult" style="color:#34c759">+306.0만원</div>
+      <div class="result-grid">
+        <div class="result-item">
+          <div class="result-item-value" id="profitPct">+30.6%</div>
+          <div class="result-item-label">수익률</div>
+        </div>
+        <div class="result-item">
+          <div class="result-item-value" id="tokenCount">163,934</div>
+          <div class="result-item-label">매수 수량</div>
+        </div>
+        <div class="result-item">
+          <div class="result-item-value" id="totalFee">4.5만원</div>
+          <div class="result-item-label">총 수수료</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">가격 시나리오별 예상 수익</div>
+    <div class="card-subtitle" id="scenarioSub">투자금 1,000만원 · 매수가 61원 기준</div>
+    <div id="scenarioBars">
+      <!-- Generated by JS -->
+    </div>
+  </div>
+</div>
+
+<!-- TAB 3: 리스크 분석 -->
+<div class="tab-content" id="tab3">
+  <div class="card">
+    <div class="card-title">종합 리스크 스코어</div>
+    <div class="risk-score-container">
+      <div class="risk-circle">
+        <svg viewBox="0 0 120 120" width="120" height="120">
+          <circle cx="60" cy="60" r="50" fill="none" stroke="#f0f0f2" stroke-width="10"/>
+          <circle cx="60" cy="60" r="50" fill="none" stroke="#ff9500" stroke-width="10"
+                  stroke-dasharray="188.5 314.2" stroke-dashoffset="-78.5"
+                  transform="rotate(-90 60 60)" stroke-linecap="round"/>
+        </svg>
+        <div class="risk-score-num" style="color:#ff9500">62</div>
+      </div>
+      <div class="risk-score-label">100점 만점 · 중간 위험</div>
+    </div>
+    <div class="risk-items">
+      <div class="risk-item"><span>입금비율 (0.87%)</span><span class="risk-item-score" style="color:#34c759">15/20 낮음</span></div>
+      <div class="risk-item"><span>고래 집중도</span><span class="risk-item-score" style="color:#ff9500">12/20 중간</span></div>
+      <div class="risk-item"><span>선물 OI 비율</span><span class="risk-item-score" style="color:#ff3b30">16/20 높음</span></div>
+      <div class="risk-item"><span>소셜 과열도</span><span class="risk-item-score" style="color:#ff3b30">14/20 높음</span></div>
+      <div class="risk-item"><span>유동성 리스크</span><span class="risk-item-score" style="color:#ff9500">5/10 중간</span></div>
+      <div class="risk-item"><span>네트워크 리스크</span><span class="risk-item-score" style="color:#34c759">0/10 낮음</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">과거 빗썸 유사 상장 비교</div>
+    <div style="overflow-x:auto">
+    <table>
+      <thead>
+        <tr><th>토큰</th><th>입금/유통</th><th>상장일 고가</th><th>1h 후</th><th>24h 후</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>ARKM</strong></td><td>1.2%</td>
+          <td style="color:#34c759">+85%</td>
+          <td style="color:#ff3b30">-15%</td>
+          <td style="color:#ff3b30">-32%</td>
+        </tr>
+        <tr>
+          <td><strong>ONDO</strong></td><td>0.9%</td>
+          <td style="color:#34c759">+120%</td>
+          <td style="color:#34c759">+45%</td>
+          <td style="color:#ff3b30">-8%</td>
+        </tr>
+        <tr>
+          <td><strong>PENDLE</strong></td><td>1.5%</td>
+          <td style="color:#34c759">+65%</td>
+          <td style="color:#ff3b30">-5%</td>
+          <td style="color:#ff3b30">-25%</td>
+        </tr>
+        <tr>
+          <td><strong>TIA</strong></td><td>0.7%</td>
+          <td style="color:#34c759">+150%</td>
+          <td style="color:#34c759">+60%</td>
+          <td style="color:#34c759">+12%</td>
+        </tr>
+        <tr>
+          <td><strong>WAXP</strong></td><td>2.1%</td>
+          <td style="color:#34c759">+220%</td>
+          <td style="color:#34c759">+180%</td>
+          <td style="color:#34c759">+65%</td>
+        </tr>
+        <tr style="background:#f9f9fb;font-weight:600">
+          <td>평균</td><td>1.3%</td>
+          <td style="color:#34c759">+128%</td>
+          <td style="color:#34c759">+53%</td>
+          <td style="color:#ff3b30">-2.4%</td>
+        </tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="card-subtitle" style="margin-top:12px">* PHA 입금비율 0.87%는 평균 대비 낮아 초기 펌프 가능성 높음</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">최악의 시나리오</div>
+    <div class="worst-card">
+      <div class="worst-title">1. 입출금 가두리 + 글로벌 동반 하락</div>
+      <div class="worst-desc">빗썸이 입출금을 차단하고, 동시에 글로벌 시장이 급락하면 빗썸 내부 가격도 폭락. 김프 아비 불가, 현물 손실 극대화. 예상 손실: -40% ~ -60%</div>
+    </div>
+    <div class="worst-card">
+      <div class="worst-title">2. 바이낸스 핫월렛 매진 → 헷지 불가</div>
+      <div class="worst-desc">바이낸스에서 PHA 현물 매수가 불가능해 헷지 포지션 구축 실패. 방향성 베팅만 가능하게 되어 리스크 급증. 대안: OKX/Gate에서 현물 매수 시도</div>
+    </div>
+    <div class="worst-card">
+      <div class="worst-title">3. AI 섹터 전체 급락 + 토큰 언락</div>
+      <div class="worst-desc">3월 AI 토큰 $338M 언락 스케줄과 맞물려 섹터 전체 매도 압력 발생. PHA 글로벌가 -30% 이상 하락 시 빗썸 김프도 소멸. 예상 손실: -30% ~ -50%</div>
+    </div>
+  </div>
+</div>
+
+<!-- TAB 4: 실행 체크리스트 -->
+<div class="tab-content" id="tab4">
+  <div class="card">
+    <div class="card-title">실행 타임라인</div>
+    <div class="timeline-item">
+      <div class="timeline-dot" style="background:#ff3b30">1</div>
+      <div class="timeline-content">
+        <div class="timeline-time">지금 즉시</div>
+        <div class="timeline-desc">빗썸 입출금 상태 확인 → 열려있으면 전략1(아비), 막혀있으면 전략2(글로벌 숏)만</div>
+      </div>
+    </div>
+    <div class="timeline-item">
+      <div class="timeline-dot" style="background:#ff9500">2</div>
+      <div class="timeline-content">
+        <div class="timeline-time">즉시</div>
+        <div class="timeline-desc">바이낸스 PHA 매수 시도 + 동시 선물 숏 → 빗썸 전송 시작</div>
+      </div>
+    </div>
+    <div class="timeline-item">
+      <div class="timeline-dot" style="background:#007aff">3</div>
+      <div class="timeline-content">
+        <div class="timeline-time">오후 3시</div>
+        <div class="timeline-desc">거래 개시 → 빗썸 KRW 시장가 매도 → 바이낸스 숏 정리</div>
+      </div>
+    </div>
+    <div class="timeline-item">
+      <div class="timeline-dot" style="background:#34c759">4</div>
+      <div class="timeline-content">
+        <div class="timeline-time">오후 3시+</div>
+        <div class="timeline-desc">김프 수렴 감시 → 추가 아비 기회 or 글로벌 숏 익절</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="warning-box">
+    <div class="warning-title">핵심 주의사항</div>
+    <div class="warning-item"><span>빗썸 입출금 상태</span><span class="tag tag-red">반드시 확인! 가두리 가능성</span></div>
+    <div class="warning-item"><span>바이낸스 현물 재고</span><span class="tag tag-red">핫월렛 매진 — 매수 어려울 수 있음</span></div>
+    <div class="warning-item"><span>전송 시간 (ERC-20)</span><span class="tag tag-orange">5~15분 — 3시 전 도착해야</span></div>
+    <div class="warning-item"><span>가격 변동성</span><span class="tag tag-red">바이낸스 핫 매진 = 글로벌가도 급등 중</span></div>
+    <div class="warning-item"><span>슬리피지</span><span class="tag tag-orange">빗썸 유동성 얇음 (1.64%)</span></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">실행 체크리스트</div>
+    <div class="check-item" onclick="toggleCheck(this)"><div class="check-box"></div>빗썸 입출금 상태 확인</div>
+    <div class="check-item" onclick="toggleCheck(this)"><div class="check-box"></div>바이낸스 PHA 현물 매수 가능 확인</div>
+    <div class="check-item" onclick="toggleCheck(this)"><div class="check-box"></div>바이낸스 PHAUSDT 선물 숏 진입</div>
+    <div class="check-item" onclick="toggleCheck(this)"><div class="check-box"></div>PHA → 빗썸 ERC-20 전송 시작</div>
+    <div class="check-item" onclick="toggleCheck(this)"><div class="check-box"></div>빗썸 입금 확인 (컨펌 대기)</div>
+    <div class="check-item" onclick="toggleCheck(this)"><div class="check-box"></div>3시 거래 개시 대기</div>
+    <div class="check-item" onclick="toggleCheck(this)"><div class="check-box"></div>빗썸 KRW 시장가 매도 실행</div>
+    <div class="check-item" onclick="toggleCheck(this)"><div class="check-box"></div>바이낸스 선물 숏 정리</div>
+    <div class="check-item" onclick="toggleCheck(this)"><div class="check-box"></div>손익 정산 및 기록</div>
+  </div>
+
+  <div class="priority-box">
+    <div style="font-weight:700;margin-bottom:10px">실행 우선순위</div>
+    <div class="priority-item"><span class="priority-time" style="color:#ff3b30">지금!</span><span>빗썸 입출금 상태 확인 → 열려있으면 전략1(아비), 막혀있으면 전략2(글로벌 숏)만</span></div>
+    <div class="priority-item"><span class="priority-time">즉시</span><span>바이낸스 PHA 매수 시도 + 동시 선물 숏 → 빗썸 전송 시작</span></div>
+    <div class="priority-item"><span class="priority-time" style="color:#007aff">3시</span><span>거래 개시 → 빗썸 KRW 시장가 매도 → 바이낸스 숏 정리</span></div>
+    <div class="priority-item"><span class="priority-time" style="color:#34c759">3시+</span><span>김프 수렴 감시 → 추가 아비 기회 or 글로벌 숏 익절</span></div>
+  </div>
+</div>
+
+</div><!-- container -->
+
+<div class="footer">
+  PHA 빗썸 상장 분석 대시보드 · 데이터 기준 2026-03-20 · 투자 결정은 본인 책임
+</div>
+
+<script>
+// Tab switching
+function switchTab(idx) {
+  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', i===idx));
+  document.querySelectorAll('.tab-content').forEach((t,i) => t.classList.toggle('active', i===idx));
+  if(idx===2) { calcProfit(); renderScenarios(); }
+}
+
+// Checklist toggle
+function toggleCheck(el) {
+  el.querySelector('.check-box').classList.toggle('checked');
+}
+
+// Profit calculator
+function calcProfit() {
+  const invest = parseFloat(document.getElementById('investSlider').value);
+  const buy = parseFloat(document.getElementById('buySlider').value);
+  const sell = parseFloat(document.getElementById('sellSlider').value);
+  const fee = parseFloat(document.getElementById('feeSlider').value);
+
+  document.getElementById('investVal').textContent = invest.toLocaleString();
+  document.getElementById('buyVal').textContent = buy;
+  document.getElementById('sellVal').textContent = sell;
+  document.getElementById('feeVal').textContent = fee.toFixed(2);
+
+  const investKrw = invest * 10000;
+  const tokens = Math.floor(investKrw / buy);
+  const sellTotal = tokens * sell;
+  const buyFee = investKrw * (fee/100);
+  const sellFee = sellTotal * (fee/100);
+  const totalFee = buyFee + sellFee;
+  const profit = sellTotal - investKrw - totalFee;
+  const pct = ((profit / investKrw) * 100);
+
+  const el = document.getElementById('profitResult');
+  const sign = profit >= 0 ? '+' : '';
+  el.textContent = sign + (profit/10000).toFixed(1) + '만원';
+  el.style.color = profit >= 0 ? '#34c759' : '#ff3b30';
+
+  document.getElementById('profitPct').textContent = sign + pct.toFixed(1) + '%';
+  document.getElementById('profitPct').style.color = profit >= 0 ? '#34c759' : '#ff3b30';
+  document.getElementById('tokenCount').textContent = tokens.toLocaleString();
+  document.getElementById('totalFee').textContent = (totalFee/10000).toFixed(1) + '만원';
+
+  renderScenarios();
+}
+
+function renderScenarios() {
+  const invest = parseFloat(document.getElementById('investSlider').value);
+  const buy = parseFloat(document.getElementById('buySlider').value);
+  const fee = parseFloat(document.getElementById('feeSlider').value);
+
+  document.getElementById('scenarioSub').textContent =
+    '투자금 ' + invest.toLocaleString() + '만원 · 매수가 ' + buy + '원 기준';
+
+  const scenarios = [
+    { label:'폭락 -50%', price: Math.round(buy*0.5), color:'#ff3b30' },
+    { label:'하락 -20%', price: Math.round(buy*0.8), color:'#ff9500' },
+    { label:'보합', price: buy, color:'#86868b' },
+    { label:'김프 +20%', price: Math.round(buy*1.2), color:'#007aff' },
+    { label:'펌프 +50%', price: Math.round(buy*1.5), color:'#34c759' },
+    { label:'급등 +100%', price: Math.round(buy*2), color:'#6c5ce7' },
+    { label:'극단 +200%', price: Math.round(buy*3), color:'#af52de' },
+  ];
+
+  const investKrw = invest * 10000;
+  const tokens = Math.floor(investKrw / buy);
+  const maxProfit = tokens * scenarios[scenarios.length-1].price - investKrw;
+
+  let html = '';
+  scenarios.forEach(s => {
+    const sellTotal = tokens * s.price;
+    const totalFee = investKrw*(fee/100) + sellTotal*(fee/100);
+    const profit = sellTotal - investKrw - totalFee;
+    const pct = (profit/investKrw*100);
+    const barW = Math.max(5, Math.min(100, ((profit+investKrw)/(maxProfit+investKrw))*100));
+    const sign = profit >= 0 ? '+' : '';
+    html += `<div class="scenario-row">
+      <div class="scenario-label">${s.label}<br><small style="color:#86868b">${s.price}원</small></div>
+      <div class="bar-track"><div class="bar-fill" style="width:${barW}%;background:${s.color};min-width:40px;font-size:10px">${sign}${pct.toFixed(0)}%</div></div>
+      <div class="scenario-value" style="color:${profit>=0?'#34c759':'#ff3b30'}">${sign}${(profit/10000).toFixed(0)}만원</div>
+    </div>`;
+  });
+  document.getElementById('scenarioBars').innerHTML = html;
+}
+
+// Init
+calcProfit();
+</script>
+</body>
+</html>

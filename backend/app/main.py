@@ -24,6 +24,8 @@ from app.connectors.bybit_perp import BybitPerpConnector
 from app.connectors.hyperliquid_perp import HyperliquidPerpConnector
 from app.connectors.lighter_perp import LighterPerpConnector
 from app.connectors.edgex_perp import EdgeXPerpConnector
+from app.connectors.nado_perp import NadoPerpConnector
+from app.connectors.standx_perp import StandXPerpConnector
 from app.core.config import get_settings
 from app.services.opportunity_engine import OpportunityEngine
 from app.services.fill_monitor import start_fill_monitor, stop_fill_monitor
@@ -144,6 +146,20 @@ async def startup_event() -> None:
                 logger.info("EdgeX perpetual connector enabled / EdgeX 무기한 선물 커넥터 활성화")
             except Exception as exc:  # pylint: disable=broad-except
                 logger.exception("Failed to initialize EdgeX perp connector: %s", exc)
+
+        if settings.enable_nado_perp:
+            try:
+                connectors.append(NadoPerpConnector(settings.trading_symbols))
+                logger.info("Nado DEX perpetual connector enabled (1h funding) / Nado DEX 무기한 선물 커넥터 활성화 (1시간 펀딩)")
+            except Exception as exc:  # pylint: disable=broad-except
+                logger.exception("Failed to initialize Nado perp connector: %s", exc)
+
+        if settings.enable_standx_perp:
+            try:
+                connectors.append(StandXPerpConnector(settings.trading_symbols))
+                logger.info("StandX perpetual connector enabled / StandX 무기한 선물 커넥터 활성화")
+            except Exception as exc:  # pylint: disable=broad-except
+                logger.exception("Failed to initialize StandX perp connector: %s", exc)
     else:
         # Add simulated perpetual connector for demo / 데모용 시뮬레이션 무기한 선물 커넥터 추가
         connectors.append(

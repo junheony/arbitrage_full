@@ -98,6 +98,14 @@ class Settings(BaseSettings):
         default=True,
         description="Enable EdgeX perpetual connector.",
     )
+    enable_nado_perp: bool = Field(
+        default=True,
+        description="Enable Nado DEX perpetual connector (1h funding interval).",
+    )
+    enable_standx_perp: bool = Field(
+        default=True,
+        description="Enable StandX perpetual connector (yield-bearing DUSD margin).",
+    )
     min_open_interest_usd: float = Field(
         default=100_000.0,
         description="Minimum open interest in USD to consider for perp arbitrage.",
